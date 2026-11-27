@@ -1,0 +1,3 @@
+[submodule "vendor/YMusicV4"]
+	path = vendor/YMusicV4
+	url = https://github.com/ymusic-io/YMusicV4.git
