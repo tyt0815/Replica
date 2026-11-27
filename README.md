@@ -1,6 +1,6 @@
 # Replica
 
-Replica는 음악과 영상을 한 앱에서 재생하는 프로젝트입니다. Flutter로 화면을 만들고 YMusicV4에서 검색과 재생 기능을 가져옵니다. 현재 단계는 저장소 준비입니다. 실행할 앱은 아직 없습니다.
+Replica는 음악과 영상을 한 앱에서 재생하는 Flutter 프로젝트입니다. Android 시험판은 YouTube 검색 결과를 YMusicV4 파서로 읽고 선택한 영상을 YouTube 임베디드 플레이어로 재생합니다.
 
 ## 시작하기
 
@@ -19,6 +19,22 @@ git submodule update --init --recursive
 ```
 
 ## 개발 방향
+
+### Android 시험판 실행
+
+Flutter(Dart 3.14 이상), Android SDK, JDK 21, Node.js와 npm을 준비합니다. 서브모듈을 초기화한 뒤 아래 명령을 실행합니다. Gradle은 고정된 esbuild 버전으로 YMusic 검색 파서와 그 의존성을 묶습니다. 첫 빌드에는 인터넷 연결이 필요합니다.
+
+```sh
+cd apps/replica
+flutter pub get
+flutter analyze
+flutter test
+flutter run
+```
+
+설치 파일은 `flutter build apk --release --target-platform android-arm64,android-x64`로 만듭니다. 경로는 `build/app/outputs/flutter-apk/app-release.apk`입니다. 현재 시험판은 로컬 디버그 키로 서명합니다.
+
+### 목표
 
 - 음악 화면은 Replica Music의 다운로드 우선 재생과 `.rm` 재생목록 동작을 기준으로 합니다.
 - 영상 화면도 Flutter로 구현합니다. Android에서 먼저 검증하고 Windows 지원 범위는 기능별로 확장합니다.
