@@ -1050,19 +1050,15 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
           }
         }
         if (remoteHistory == null && legacyHistory != null) {
-          try {
-            await widget.core.invoke({
-              'op': 'rename_playlist',
-              'playlist_id': legacyHistory.id,
-              'new_remote_title': targetRemoteTitle,
-              'session': session,
-            });
-            remoteHistory = legacyHistory.copyWith(
-              remoteTitle: targetRemoteTitle,
-            );
-          } catch (_) {
-            remoteHistory = legacyHistory;
-          }
+          await widget.core.invoke({
+            'op': 'rename_playlist',
+            'playlist_id': legacyHistory.id,
+            'new_remote_title': targetRemoteTitle,
+            'session': session,
+          });
+          remoteHistory = legacyHistory.copyWith(
+            remoteTitle: targetRemoteTitle,
+          );
         }
       }
       if (remoteHistory == null) {
@@ -1077,8 +1073,27 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
         }
         final rawPl =
             (createdData['playlist'] as Map<String, dynamic>?) ?? const {};
-        if (rawPl.isNotEmpty) {
-          remoteHistory = PlaylistItem.fromCoreJson(rawPl);
+        if (rawPl.isNotEmpty && mounted) {
+          final created = PlaylistItem.fromCoreJson(rawPl);
+          if (created.id.isNotEmpty) {
+            final local = _rawPlaylists
+                .where(_isCurrentDeviceHistory)
+                .firstOrNull;
+            final bound = created.copyWith(tracks: local?.tracks);
+            setState(() {
+              _rawPlaylists = [
+                bound,
+                ..._rawPlaylists.where(
+                  (p) => !_isCurrentDeviceHistory(p) && p.id != bound.id,
+                ),
+              ];
+              if (_selectedPlaylistId == _localHistoryPlaylistId) {
+                _selectedPlaylistId = bound.id;
+              }
+            });
+            remoteHistory = bound;
+            await _saveCachedPlaylists();
+          }
         }
       }
       if (remoteHistory == null || remoteHistory.id.isEmpty) {
@@ -1621,7 +1636,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
               ? localTs
               : nextPlaylistTimestamp(remoteTs);
           final effectiveTitle = buildVersionedRemoteTitle(
-            existing.remoteTitle,
+            parsed.remoteTitle,
             effectiveTs,
           );
           final merged = parsed.copyWith(

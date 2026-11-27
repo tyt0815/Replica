@@ -1,5 +1,13 @@
 # 개발 상태
 
+## Android 0.4.2 수정
+
+- YMusic의 yplrm1 토큰에서 곡 항목 ID를 추출하도록 수정했다. 곡 이동과 앞 곡 지정에 같은 규칙을 사용한다.
+- 목록 생성·조회·이름 변경의 Android 응답과 요청을 Flutter 규격에 맞췄다. 기기별 목록이 없고 History.rm이 있으면 하나를 History.기기이름.rm으로 변경한다. 기존 중복 목록은 보존한다. 새 목록은 첫 곡 기록 전에 ID를 저장한다.
+- 최근 재생한 곡을 원격 기록 목록 맨 앞으로 이동하고 최대 100곡을 유지한다.
+- ./scripts/check-android.ps1 통과. 정적 분석, 위젯 테스트 14개, 서명된 Release APK 0.4.2+6 검증 완료. 기존 History 이름 변경 후 세 번의 재생 요청이 같은 ID를 쓰는지 검사했다. Gradle :replica-backend:test에서 엔진 토큰 회귀 테스트 통과.
+- Android 에뮬레이터에서 0.4.1 위에 0.4.2 설치 및 실행을 확인했다. 다음 확인은 실제 YouTube 계정에서 목록 순서를 바꾸고 다른 클라이언트에서 다시 읽는 것과 Fold8 실기기 확인이다.
+
 ## 0.4.1 배포 결과
 
 - 최신 [GitHub Release](https://github.com/tyt0815/Replica/releases/tag/v0.4.1) 게시 완료. 태그 커밋은 79bce59다.

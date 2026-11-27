@@ -50,7 +50,7 @@ class ReplicaBackend(
     private val cookieProvider: () -> String,
     private val engineManager: DynamicEngineManager,
     private val playerEngineFactory: () -> DynamicEnginePlayer,
-    val coreVersion: String = "0.4.1",
+    val coreVersion: String = "0.4.2",
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val innertube = InnertubeSupplement(httpClient, cookieProvider)
@@ -198,10 +198,9 @@ class ReplicaBackend(
         val playlists = mutableListOf<JsonObject>()
         val seen = mutableSetOf<String>()
         var continuation: String? = null
-        var pages = 0
-        while (pages < 10) {
+        val seenPages = mutableSetOf<String>()
+        while (true) {
             val page = engineManager.extractAccountLibrary(continuation = continuation)
-            pages++
             for (section in page.sections) {
                 for (item in section.items) {
                     if (item.kind != YtFeedItem.KIND_PLAYLIST) continue
@@ -212,7 +211,7 @@ class ReplicaBackend(
                     playlists.add(
                         buildJsonObject {
                             put("id", id)
-                            put("raw_title", item.title)
+                            put("remote_title", item.title)
                             put("display_title", PlaylistRules.toDisplayTitle(item.title))
                             put("track_count", count)
                             put("thumbnail", item.thumbs.lastOrNull()?.url.orEmpty())
@@ -222,6 +221,7 @@ class ReplicaBackend(
             }
             val next = page.continuation
             if (next.isNullOrBlank()) break
+            check(seenPages.add(next)) { "보관함 페이지가 반복되었습니다." }
             continuation = next
         }
         return buildJsonObject { put("playlists", JsonArray(playlists)) }
@@ -264,7 +264,7 @@ class ReplicaBackend(
     }
 
     private suspend fun handleCreatePlaylist(req: JsonObject): JsonObject {
-        val rawTitle = req["title"]?.jsonPrimitive?.content?.trim().orEmpty()
+        val rawTitle = (req["remote_title"] ?: req["title"])?.jsonPrimitive?.content?.trim().orEmpty()
         val remoteTitle = if (PlaylistRules.isReplicaPlaylist(rawTitle)) {
             rawTitle
         } else {
@@ -272,7 +272,7 @@ class ReplicaBackend(
         }
         val description = req["description"]?.jsonPrimitive?.content
         val videoIds = req["video_ids"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content.takeIf { s -> s.isNotBlank() } }.orEmpty()
-        val auth = req["auth"] as? JsonObject
+        val auth = (req["session"] ?: req["auth"]) as? JsonObject
 
         val playlistId = if (videoIds.isNotEmpty()) {
             engineManager.createPlaylist(remoteTitle, YtPlaylistTarget.PRIVATE, videoIds)
@@ -282,7 +282,7 @@ class ReplicaBackend(
         return buildJsonObject {
             put("playlist", buildJsonObject {
                 put("id", playlistId)
-                put("raw_title", remoteTitle)
+                put("remote_title", remoteTitle)
                 put("display_title", PlaylistRules.toDisplayTitle(remoteTitle))
                 put("track_count", videoIds.size)
             })
@@ -291,15 +291,16 @@ class ReplicaBackend(
 
     private suspend fun handleRenamePlaylist(req: JsonObject): JsonObject {
         val playlistId = req["playlist_id"]?.jsonPrimitive?.content?.trim().orEmpty()
-        val newTitle = req["new_title"]?.jsonPrimitive?.content?.trim().orEmpty()
-        val auth = req["auth"] as? JsonObject
+        val newTitle = (req["new_remote_title"] ?: req["new_title"])?.jsonPrimitive?.content?.trim().orEmpty()
+        require(newTitle.isNotBlank())
+        val auth = (req["session"] ?: req["auth"]) as? JsonObject
         innertube.renamePlaylist(playlistId, newTitle, auth)
         return buildJsonObject { put("renamed", true) }
     }
 
     private suspend fun handleDeletePlaylist(req: JsonObject): JsonObject {
         val playlistId = req["playlist_id"]?.jsonPrimitive?.content?.trim().orEmpty()
-        val auth = req["auth"] as? JsonObject
+        val auth = (req["session"] ?: req["auth"]) as? JsonObject
         innertube.deletePlaylist(playlistId, auth)
         return buildJsonObject { put("deleted", true) }
     }
@@ -316,7 +317,7 @@ class ReplicaBackend(
         val setVideoId = req["set_video_id"]?.jsonPrimitive?.content?.trim().orEmpty()
         val videoId = req["video_id"]?.jsonPrimitive?.content?.trim().orEmpty()
         val token = if (setVideoId.isNotEmpty()) {
-            "rm:$playlistId:$setVideoId"
+            PlaylistRules.removeToken(playlistId, setVideoId)
         } else {
             fetchAllPlaylistItems(playlistId).firstOrNull { it.id == videoId }?.removeToken
                 ?: throw IllegalStateException("삭제할 곡의 토큰을 찾지 못했습니다.")
@@ -330,8 +331,16 @@ class ReplicaBackend(
         val desiredIds = req["video_ids"]?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
         val auth = (req["session"] ?: req["auth"]) as? JsonObject
 
-        val current = fetchAllPlaylistItems(playlistId)
+        return syncPlaylistTracks(playlistId, desiredIds, auth, fetchAllPlaylistItems(playlistId), req["new_remote_title"]?.jsonPrimitive?.content)
+    }
 
+    private suspend fun syncPlaylistTracks(
+        playlistId: String,
+        desiredIds: List<String>,
+        auth: JsonObject?,
+        current: List<YtFeedItem>,
+        newTitle: String? = null,
+    ): JsonObject {
         val desiredCounts = desiredIds.groupingBy { it }.eachCount().toMutableMap()
 
         val removeActions = mutableListOf<JsonObject>()
@@ -340,7 +349,7 @@ class ReplicaBackend(
             if (left > 0) {
                 desiredCounts[item.id] = left - 1
             } else {
-                val setId = requireNotNull(extractSetVideoId(item.removeToken))
+                val setId = requireNotNull(PlaylistRules.setVideoId(item.removeToken))
                 removeActions.add(buildJsonObject {
                     put("action", "ACTION_REMOVE_VIDEO")
                     put("setVideoId", setId)
@@ -380,9 +389,9 @@ class ReplicaBackend(
                     ordered.add(index, moved)
                     add(buildJsonObject {
                         put("action", "ACTION_MOVE_VIDEO_AFTER")
-                        put("setVideoId", requireNotNull(extractSetVideoId(moved.removeToken)))
+                        put("setVideoId", requireNotNull(PlaylistRules.setVideoId(moved.removeToken)))
                         if (index > 0) {
-                            put("movedSetVideoIdPredecessor", requireNotNull(extractSetVideoId(ordered[index - 1].removeToken)))
+                            put("movedSetVideoIdPredecessor", requireNotNull(PlaylistRules.setVideoId(ordered[index - 1].removeToken)))
                         }
                     })
                 }
@@ -393,7 +402,7 @@ class ReplicaBackend(
             items = fetchAllPlaylistItems(playlistId)
             check(items.map { it.id } == desiredIds) { "원격 재생목록의 곡 순서를 확인할 수 없습니다." }
         }
-        req["new_remote_title"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let {
+        newTitle?.takeIf { it.isNotBlank() }?.let {
             innertube.renamePlaylist(playlistId, it, auth)
         }
         return buildJsonObject {
@@ -405,31 +414,18 @@ class ReplicaBackend(
     private suspend fun handleRecordHistoryTrack(req: JsonObject): JsonObject {
         val playlistId = req["playlist_id"]?.jsonPrimitive?.content?.trim().orEmpty()
         val videoId = req["video_id"]?.jsonPrimitive?.content?.trim().orEmpty()
-        if (playlistId.isNotEmpty() && videoId.isNotEmpty()) {
-            engineManager.addToPlaylist(playlistId, videoId)
-        }
-        return buildJsonObject { put("recorded", true) }
+        require(playlistId.isNotBlank() && videoId.isNotBlank())
+        val items = fetchAllPlaylistItems(playlistId)
+        val limit = req["max_tracks"]?.jsonPrimitive?.content?.toIntOrNull() ?: 100
+        val desired = (listOf(videoId) + items.map { it.id }.filter { it != videoId }).take(limit)
+        return syncPlaylistTracks(playlistId, desired, req["session"] as? JsonObject, items)
     }
 
     private suspend fun handleTrimHistoryPlaylist(req: JsonObject): JsonObject {
-        val playlistId = req["playlist_id"]?.jsonPrimitive?.content?.trim().orEmpty()
-        val maxItems = req["max_items"]?.jsonPrimitive?.content?.toIntOrNull() ?: 200
-        val auth = req["auth"] as? JsonObject
+        val playlistId = req.getValue("playlist_id").jsonPrimitive.content
+        val limit = req.getValue("max_tracks").jsonPrimitive.content.toInt()
         val items = fetchAllPlaylistItems(playlistId)
-        if (items.size > maxItems) {
-            val excess = items.drop(maxItems)
-            val actions = excess.mapNotNull { item ->
-                val setId = extractSetVideoId(item.removeToken) ?: return@mapNotNull null
-                buildJsonObject {
-                    put("action", "ACTION_REMOVE_VIDEO")
-                    put("setVideoId", setId)
-                }
-            }
-            if (actions.isNotEmpty()) {
-                innertube.editPlaylistActions(playlistId, JsonArray(actions), auth)
-            }
-        }
-        return buildJsonObject { put("trimmed", true) }
+        return syncPlaylistTracks(playlistId, items.take(limit).map { it.id }, req["session"] as? JsonObject, items)
     }
 
     private suspend fun handleDownloadTrack(req: JsonObject): JsonObject {
@@ -621,20 +617,13 @@ class ReplicaBackend(
         return buildJsonObject { put("cleared", true) }
     }
 
-    private fun extractSetVideoId(removeToken: String?): String? {
-        if (removeToken.isNullOrBlank()) return null
-        val body = removeToken.removePrefix("rm:")
-        val cut = body.indexOf(':')
-        return if (cut > 0 && cut < body.length - 1) body.substring(cut + 1) else null
-    }
-
     private fun trackJson(item: YtFeedItem): JsonObject = buildJsonObject {
         put("video_id", item.id)
         put("title", item.title)
         put("artist", item.channelTitle ?: item.subtitleLine1.orEmpty())
         put("duration", item.duration.orEmpty())
         put("thumbnail", item.thumbs.lastOrNull()?.url.orEmpty())
-        extractSetVideoId(item.removeToken)?.let { put("set_video_id", it) }
+        PlaylistRules.setVideoId(item.removeToken)?.let { put("set_video_id", it) }
     }
 
     private class LocalDownloadFile(private val file: File) : DownloadFile {

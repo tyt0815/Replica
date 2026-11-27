@@ -4,6 +4,19 @@ object PlaylistRules {
     const val SUFFIX = ".rm"
     const val HISTORY_PREFIX = "History."
 
+    private const val REMOVE_TOKEN_PREFIX = "yplrm1"
+
+    fun setVideoId(removeToken: String?): String? {
+        val parts = removeToken?.split(':', limit = 3) ?: return null
+        if (parts.size != 3 || parts[0] != REMOVE_TOKEN_PREFIX || parts[1].isBlank()) return null
+        return parts[2].takeIf { it.isNotBlank() }
+    }
+
+    fun removeToken(playlistId: String, setVideoId: String): String {
+        val membershipId = setVideoId.removePrefix("$playlistId:")
+        return "$REMOVE_TOKEN_PREFIX:$playlistId:$membershipId"
+    }
+
     fun isReplicaPlaylist(rawTitle: String): Boolean {
         val trimmed = rawTitle.trim()
         return trimmed.endsWith(SUFFIX) && trimmed.length > SUFFIX.length

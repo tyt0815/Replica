@@ -289,9 +289,9 @@ void main() {
     expect(extractHistoryDeviceName('History.rm'), isNull);
   });
 
-  test('Backend bridge returns 0.4.1 and enforces .rm rules', () {
+  test('Backend bridge returns 0.4.2 and enforces .rm rules', () {
     final core = NativeReplicaMusicCore.openOrFallback();
-    expect(core.coreVersion, '0.4.1');
+    expect(core.coreVersion, '0.4.2');
     expect(core.isReplicaPlaylist('Chill.rm'), isTrue);
     expect(core.isReplicaPlaylist('Chill'), isFalse);
     expect(core.toRemotePlaylistTitle('Chill'), 'Chill.rm');
@@ -942,7 +942,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(core.historyRequests.length, 3);
-      expect(core.historyRequests[0]['playlist_id'], 'PL_HISTORY_REMOTE');
+      expect(
+        core.historyRequests.map((request) => request['playlist_id']),
+        everyElement('PL_HISTORY_REMOTE'),
+      );
       expect(core.historyRequests[0]['video_id'], 'track-1');
       expect(core.historyRequests[0]['playlist_loaded'], isFalse);
       expect(core.historyRequests[0]['existing_set_video_id'], isNull);
@@ -1345,11 +1348,19 @@ class _FakeLoggedInAdapters extends _FakeMediaAdapters {
 
 class _FakeHistoryCore extends _FakeMediaCore {
   final List<Map<String, dynamic>> historyRequests = [];
+  String historyTitle = 'History.rm';
   int playlistTrackFetchCount = 0;
 
   @override
   Future<Map<String, dynamic>> invoke(Map<String, dynamic> request) async {
     switch (request['op']) {
+      case 'rename_playlist':
+        expect(request['playlist_id'], 'PL_HISTORY_REMOTE');
+        expect(request['new_remote_title'], 'History.MyFold8.rm');
+        historyTitle = request['new_remote_title'] as String;
+        return {'renamed': true};
+      case 'create_playlist':
+        fail('기존 History 목록을 재사용해야 합니다.');
       case 'playlist_tracks':
         playlistTrackFetchCount++;
         return {'tracks': <dynamic>[]};
@@ -1358,7 +1369,7 @@ class _FakeHistoryCore extends _FakeMediaCore {
           'playlists': [
             {
               'id': 'PL_HISTORY_REMOTE',
-              'remote_title': 'History.MyFold8.rm',
+              'remote_title': historyTitle,
               'subtitle': 'YouTube 재생목록',
               'thumbnail': '',
               'updated_at': 0,

@@ -16,6 +16,7 @@ kotlin {
 }
 
 dependencies {
+    testImplementation(kotlin("test-junit"))
     api("io.ymusic:dynamic-engine")
     api("io.ymusic:yt-media")
     api("io.ymusic:download")
