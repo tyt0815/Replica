@@ -1,31 +1,34 @@
 # 개발 상태
 
-## Android 시험판 0.2.0
+## Android 시험판 0.3.0
 
-Flutter 3.50.1로 검색 화면, 재생 화면, 공개 GitHub Releases 기반 앱 업데이트 확인을 구현했다. 검색 요청은 Replica가 보내고, 결과 정렬과 항목 추출은 고정된 YMusic 서브모듈의 `engine-js` 파서를 사용한다. Gradle이 빌드할 때 해당 모듈을 번들로 만든다. 재생에는 YouTube 임베디드 플레이어를 사용한다. 0.2.0부터 전용 배포 인증서로 서명한다.
+`ReplicaMusic`의 Rust 코어(`crates/replica-music-core`), Flutter UI(`apps/replica/lib`), Android 네이티브 어댑터(`MainActivity`, `AppUpdatePlugin`, `WebLoginActivity`, `AudioService`)와 리소스를 `Replica`(`io.replicamedia.replica`)로 이식했다.
+
+- 보관함, `.rm` 재생목록 동기화, YouTube 검색, 다운로드 우선 재생(`just_audio` + `audio_service` + `audio_session`), Now Playing 시트, 기기별 재생 기록, 테마 전환(시스템·라이트·다크), 오류 로그 내보내기, Fold8 4가지 화면 레이아웃을 포함한다.
+- 앱 업데이트 확인과 APK 다운로드 대상 저장소를 `tyt0815/Replica`와 `Replica-*-release.apk`로 연결했다.
+- `scripts/build-core.ps1`을 추가해 호스트와 Android(`arm64-v8a`, `x86_64`) Rust 네이티브 라이브러리를 빌드하고 `./scripts/check-android.ps1`에 통합했다.
 
 ## 확인한 동작
 
-- `0.2.0` 커밋 `40d53bb`에 태그 `v0.2.0`을 붙여 [v0.2.0 릴리스](https://github.com/tyt0815/Replica/releases/tag/v0.2.0)를 게시했다.
-- 첨부 파일은 `Replica-0.2.0-release.apk`와 `Replica-0.2.0-release.apk.sha256`이다. 로컬 `dist/` 산출물과 GitHub Release 자산의 SHA-256(`e148571443036d5d377920b2882e64ac29ed5f95f76bd23130272087b4052da0`)이 일치함을 확인했다.
-- Android 15 x86_64 에뮬레이터에서 같은 배포 키로 서명한 `0.1.99`(`versionCode=1`)를 설치해 업데이트 흐름을 검증했다.
-  - 앱 시작 시 `Replica 0.2.0 업데이트` 대화상자가 표시됐다.
-  - **취소**를 선택하면 기존 `0.1.99`에서 검색(`Jazz`)을 계속 사용할 수 있었다.
-  - 설정의 **앱 업데이트 확인**에서 **다운로드 및 설치**를 실행하자 `v0.2.0` APK 다운로드와 크기·SHA-256 검증 뒤 Android 패키지 설치 화면이 열렸다.
-  - Replica의 알 수 없는 앱 설치 권한을 허용한 뒤 기존 설치본 위에 `0.2.0`(`versionCode=2`)으로 정상 업데이트됐다.
-- 업데이트된 `0.2.0` Release APK를 같은 에뮬레이터에서 검증했다.
-  - 앱 시작 시 업데이트 안내가 뜨지 않았고, 설정의 **앱 업데이트 확인**에서 `현재 버전 0.2.0이 최신입니다.` 안내를 확인했다.
-  - `Jazz` 검색 결과 선택 시 같은 앱 프로세스의 `USAGE_MEDIA` 오디오 출력(`state:started`)을 확인했고, 뒤로가면 검색 결과가 유지되며 오디오가 멈췄다.
+- `cargo test`: Rust 코어 테스트 31개 통과 (1개 live 테스트 무시).
+- `./scripts/check-android.ps1`: Rust 호스트·Android 빌드, `flutter pub get`, `dart format` 검사, `flutter analyze`(이슈 없음), 위젯 테스트 14개 전부 통과, Release APK(`dist/Replica-0.3.0-release.apk`, 45.8MB) 빌드와 배포 인증서 지문(`4b61423c...`)·패키지 ID(`io.replicamedia.replica`)·버전(`0.3.0+3`) 검증 완료.
+- Android 15 x86_64 에뮬레이터(`emulator-5580`) 검증:
+  - 기존 `0.2.0`(`versionCode=2`) 위에 `dist/Replica-0.3.0-release.apk`(`versionCode=3`)를 덮어쓰기 설치했다.
+  - 보관함(`저장된 곡`), 하단 독(설정·보관함·검색), 설정 화면(`0.3.0`, 업데이트 확인, 테마)을 확인했다.
+  - 검색 탭에서 `jazz`와 `10 second piano` 검색 결과가 Rust 코어로 정상 조회됐다.
+  - `10 Second Piano Piece 1`을 4초 만에 `.opus` 파일로 다운로드했고, 재생 시 `USAGE_MEDIA` / `CONTENT_TYPE_MUSIC` 오디오 출력(`state:started`, 48kHz)을 확인했다.
+- 이전 릴리스 `v0.2.0`([v0.2.0 릴리스](https://github.com/tyt0815/Replica/releases/tag/v0.2.0), 커밋 `40d53bb`)은 에뮬레이터에서 `0.1.99` -> `0.2.0` 인앱 업데이트와 최신 버전 확인을 검증 완료했다.
 
 ## 미해결 항목
 
 - ARM64 실기기 검증은 남아 있다.
-- Fold8 커버·내부 화면의 세로·가로 회전과 접기·펼치기 검증은 남아 있다.
+- Fold8 커버·내부 화면의 세로·가로 회전과 접기·펼치기 실기기 검증은 남아 있다(위젯 테스트로 4가지 화면 상태 레이아웃은 검증됨).
+- `0.3.0`은 로컬 검증 및 빌드 완료 상태이며 GitHub Release 게시는 아직 진행하지 않았다.
 - Flutter는 현재 Gradle, Android Gradle Plugin, Kotlin 버전에 대해 향후 지원 종료 경고를 출력한다.
 
 ## 다음 시작점
 
-Android에 YMusic 네이티브 플레이어를 연결한다. 같은 영상에서 오디오 전용 재생과 영상 전환을 검증한다. 이어서 JS 엔진 OTA 수신과 실패 시 복구를 확인한다. 오프라인 재생, 보관함, Windows 앱은 후속 범위다.
+필요 시 `0.3.0` 릴리스 노트를 작성해 GitHub Releases에 게시한다. 이후 영상 재생 화면과 YMusic 엔진/OTA 통합, Windows 앱 확장을 진행한다.
 
 ## 배포 인계
 

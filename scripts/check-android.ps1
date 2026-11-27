@@ -18,6 +18,8 @@ function Invoke-Checked($command, [string[]]$arguments) {
     if ($LASTEXITCODE -ne 0) { throw "$command $arguments failed ($LASTEXITCODE)" }
 }
 
+& "$PSScriptRoot/build-core.ps1" -Platform all
+
 Push-Location "$root/apps/replica"
 try {
     Invoke-Checked flutter @('pub', 'get')
