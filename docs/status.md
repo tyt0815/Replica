@@ -1,17 +1,27 @@
 # 개발 상태
 
-## Android 시험판 0.1.0
+## Android 시험판 0.2.0
 
-Flutter 3.50.1로 검색 화면과 재생 화면을 구현했다. 검색 요청은 Replica가 보내고, 결과 정렬과 항목 추출은 고정된 YMusic 서브모듈의 `engine-js` 파서를 사용한다. Gradle이 빌드할 때 해당 모듈을 번들로 만든다. 재생에는 YouTube 임베디드 플레이어를 사용한다.
+Flutter 3.50.1로 검색 화면, 재생 화면, 공개 GitHub Releases 기반 앱 업데이트 확인을 구현했다. 검색 요청은 Replica가 보내고, 결과 정렬과 항목 추출은 고정된 YMusic 서브모듈의 `engine-js` 파서를 사용한다. Gradle이 빌드할 때 해당 모듈을 번들로 만든다. 재생에는 YouTube 임베디드 플레이어를 사용한다. 0.2.0부터 전용 배포 인증서로 서명한다.
 
 ## 확인한 동작
 
-- 저장소 루트의 `./scripts/check-android.ps1`로 포맷 검사, 분석, 위젯 테스트, Release 빌드를 실행했다. `dist/Replica-0.1.0-release.apk`의 SHA-256을 다시 계산해 동봉한 체크섬과 일치하는지 확인했다.
+- `0.2.0` 커밋 `40d53bb`에 태그 `v0.2.0`을 붙여 [v0.2.0 릴리스](https://github.com/tyt0815/Replica/releases/tag/v0.2.0)를 게시했다.
+- 첨부 파일은 `Replica-0.2.0-release.apk`와 `Replica-0.2.0-release.apk.sha256`이다. 로컬 `dist/` 산출물과 GitHub Release 자산의 SHA-256(`e148571443036d5d377920b2882e64ac29ed5f95f76bd23130272087b4052da0`)이 일치함을 확인했다.
+- Android 15 x86_64 에뮬레이터에서 같은 배포 키로 서명한 `0.1.99`(`versionCode=1`)를 설치해 업데이트 흐름을 검증했다.
+  - 앱 시작 시 `Replica 0.2.0 업데이트` 대화상자가 표시됐다.
+  - **취소**를 선택하면 기존 `0.1.99`에서 검색(`Jazz`)을 계속 사용할 수 있었다.
+  - 설정의 **앱 업데이트 확인**에서 **다운로드 및 설치**를 실행하자 `v0.2.0` APK 다운로드와 크기·SHA-256 검증 뒤 Android 패키지 설치 화면이 열렸다.
+  - Replica의 알 수 없는 앱 설치 권한을 허용한 뒤 기존 설치본 위에 `0.2.0`(`versionCode=2`)으로 정상 업데이트됐다.
+- 업데이트된 `0.2.0` Release APK를 같은 에뮬레이터에서 검증했다.
+  - 앱 시작 시 업데이트 안내가 뜨지 않았고, 설정의 **앱 업데이트 확인**에서 `현재 버전 0.2.0이 최신입니다.` 안내를 확인했다.
+  - `Jazz` 검색 결과 선택 시 같은 앱 프로세스의 `USAGE_MEDIA` 오디오 출력(`state:started`)을 확인했고, 뒤로가면 검색 결과가 유지되며 오디오가 멈췄다.
 
-- 앱 커밋 `dd3b21a`에서 `flutter clean` 후 의존성을 복원했다. Dart 포맷 검사, `flutter analyze`, 위젯 테스트 1개가 통과했다.
-- Debug APK와 arm64·x86_64 Release APK를 새로 빌드했다. Release APK의 v2 서명과 두 ABI를 확인했다.
-- Android 15 x86_64 에뮬레이터 두 대에서 각각 Debug와 Release를 설치했다. 두 기기 모두 Jazz 검색 결과를 열고 같은 앱 프로세스의 오디오 출력을 확인했다. 뒤로 가면 검색 결과가 유지되고 오디오가 멈췄다.
-- ARM64 실기기 검증은 남아 있다. Flutter는 현재 Gradle, Android Gradle Plugin, Kotlin 버전에 대해 향후 지원 종료 경고를 출력했다.
+## 미해결 항목
+
+- ARM64 실기기 검증은 남아 있다.
+- Fold8 커버·내부 화면의 세로·가로 회전과 접기·펼치기 검증은 남아 있다.
+- Flutter는 현재 Gradle, Android Gradle Plugin, Kotlin 버전에 대해 향후 지원 종료 경고를 출력한다.
 
 ## 다음 시작점
 
@@ -21,4 +31,4 @@ Android에 YMusic 네이티브 플레이어를 연결한다. 같은 영상에서
 
 Replica Music의 작업 지침, README, 환경·검증·빌드 스크립트와 게시된 v0.16.1을 대조했다. 해당 릴리스에는 한국어 변경 사항과 알려진 제약, APK, SHA256SUMS.txt가 있다. 추적된 저장소에 자동 게시 워크플로는 없다. Replica는 기존 빌드 스크립트의 APK별 `.sha256` 이름을 사용한다. [참고 릴리스](https://github.com/tyt0815/ReplicaMusic/releases/tag/v0.16.1)
 
-Replica 0.1.0은 디버그 키로 서명한 로컬 시험판이다. 0.2.0은 전용 배포 인증서를 사용한다. 공개 저장소의 최신 릴리스를 앱 시작과 설정 화면에서 확인한다. APK 크기와 GitHub가 제공한 SHA-256을 대조한 뒤 시스템 설치 화면을 연다. 배포 시 [릴리스 작업](../AGENTS.md#릴리스-작업)을 따른다.
+Replica 0.1.0은 디버그 키로 서명한 로컬 시험판이다. 0.2.0부터 전용 배포 인증서를 사용한다. 공개 저장소의 최신 릴리스를 앱 시작과 설정 화면에서 확인한다. APK 크기와 GitHub가 제공한 SHA-256을 대조한 뒤 시스템 설치 화면을 연다. 배포 시 [릴리스 작업](../AGENTS.md#릴리스-작업)을 따른다.
