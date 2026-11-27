@@ -34,6 +34,8 @@ flutter run
 
 설치 파일은 `flutter build apk --release --target-platform android-arm64,android-x64`로 만듭니다. 경로는 `build/app/outputs/flutter-apk/app-release.apk`입니다. 현재 시험판은 로컬 디버그 키로 서명합니다.
 
+Windows에서는 저장소 루트에서 `./scripts/check-android.ps1`을 실행하면 포맷 검사부터 Release APK 생성까지 진행합니다. `-Mode debug`를 붙이면 Debug APK를 만듭니다. 결과는 `dist/Replica-<버전>-<모드>.apk`와 같은 이름의 `.sha256` 파일입니다. PATH에 Flutter가 있으면 현재 개발 환경을 사용합니다. 없으면 저장소의 `.tools`, 인접한 ReplicaMusic의 `.tools` 순으로 찾습니다.
+
 ### 목표
 
 - 음악 화면은 Replica Music의 다운로드 우선 재생과 `.rm` 재생목록 동작을 기준으로 합니다.

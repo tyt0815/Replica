@@ -6,6 +6,8 @@ Flutter 3.50.1로 검색 화면과 재생 화면을 구현했다. 검색 요청�
 
 ## 확인한 동작
 
+- 저장소 루트의 `./scripts/check-android.ps1`로 포맷 검사, 분석, 위젯 테스트, Release 빌드를 실행했다. `dist/Replica-0.1.0-release.apk`의 SHA-256을 다시 계산해 동봉한 체크섬과 일치하는지 확인했다.
+
 - 앱 커밋 `dd3b21a`에서 `flutter clean` 후 의존성을 복원했다. Dart 포맷 검사, `flutter analyze`, 위젯 테스트 1개가 통과했다.
 - Debug APK와 arm64·x86_64 Release APK를 새로 빌드했다. Release APK의 v2 서명과 두 ABI를 확인했다.
 - Android 15 x86_64 에뮬레이터 두 대에서 각각 Debug와 Release를 설치했다. 두 기기 모두 Jazz 검색 결과를 열고 같은 앱 프로세스의 오디오 출력을 확인했다. 뒤로 가면 검색 결과가 유지되고 오디오가 멈췄다.
