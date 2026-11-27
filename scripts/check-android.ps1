@@ -40,6 +40,13 @@ try {
     $badging = & $aapt.FullName dump badging $apk
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect APK' }
     $identity = $badging | Where-Object { $_ -like 'package:*' } | Select-Object -First 1
+    if ($Mode -eq 'release') {
+        $signatures = & (Join-Path $aapt.DirectoryName 'apksigner.bat') verify --print-certs $apk
+        $fingerprint = '4b61423c90f3781d8f9b52ebbe80efb7412dafb9bc0175fdbf31223cbcdf5cd0'
+        if ($LASTEXITCODE -ne 0 -or $signatures -notcontains "Signer #1 certificate SHA-256 digest: $fingerprint") {
+            throw 'Release APK signing certificate mismatch'
+        }
+    }
     if (!$identity -or !$identity.Contains("name='io.replicamedia.replica'") -or
         !$identity.Contains("versionName='$version'") -or !$identity.Contains("versionCode='$buildNumber'")) {
         throw "Unexpected APK identity: $identity"

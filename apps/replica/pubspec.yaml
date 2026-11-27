@@ -1,16 +1,21 @@
-﻿name: replica
+name: replica
 description: Replica 음악 및 영상 플레이어
 publish_to: none
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ^3.14.0
 
 dependencies:
+  crypto: ^3.0.8
   flutter:
     sdk: flutter
   http: ^1.6.0
   material_ui: ^1.1.0
+  open_filex: ^5.0.0
+  package_info_plus: ^10.2.2
+  path_provider: ^2.1.6
+  pub_semver: ^2.2.1
   youtube_player_iframe: ^6.0.4
 
 dev_dependencies:

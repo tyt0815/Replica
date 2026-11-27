@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import 'search.dart';
+import 'update_screen.dart';
 
 void main() => runApp(const ReplicaApp());
 
@@ -32,6 +33,14 @@ class _SearchScreenState extends State<SearchScreen> {
   String? message;
   bool busy = false;
   int generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) checkUpdate(context, manual: false);
+    });
+  }
 
   Future<void> search(String value) async {
     final query = value.trim();
@@ -67,6 +76,16 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
+      actions: [
+        IconButton(
+          tooltip: '설정',
+          icon: const Icon(Icons.settings_outlined),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+          ),
+        ),
+      ],
       title: const Text(
         'Replica',
         style: TextStyle(fontWeight: FontWeight.w800),
