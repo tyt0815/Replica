@@ -1,5 +1,10 @@
 # 개발 상태
 
+## 0.4.2 배포 결과
+
+- [GitHub 최신 릴리스](https://github.com/tyt0815/Replica/releases/tag/v0.4.2) 게시 확인. 태그 커밋은 64474d8이다.
+- Replica-0.4.2-release.apk와 Replica-0.4.2-release.apk.sha256을 첨부했다. 게시 전후 내려받은 APK의 SHA-256은 f77bd65f1d0c639f3d53fee7d077189610e23c26e3f4447321f3c1a0772817fa 로 일치했다.
+
 ## Android 0.4.2 수정
 
 - YMusic의 yplrm1 토큰에서 곡 항목 ID를 추출하도록 수정했다. 곡 이동과 앞 곡 지정에 같은 규칙을 사용한다.
