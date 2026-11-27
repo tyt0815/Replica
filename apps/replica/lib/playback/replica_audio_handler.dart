@@ -582,12 +582,16 @@ class ReplicaPlaybackController {
     _upNextTrackIds.remove(track.id);
     _activeTrack = track;
     final cachedLocal = downloadManager.resolveLocalPath(track);
-    _isLoading = cachedLocal == null;
+    _isLoading = true;
+    _isPlaying = false;
+    _durationMs = 0;
     _positionMs = initialPositionMs;
     _hasLoadedCurrentTrack = false;
     _emitState();
 
     try {
+      await _engine.stop();
+      if (seq != _requestSeq) return;
       String? filePath = cachedLocal;
       if (filePath == null) {
         _loadingTrackId = track.id;
@@ -991,6 +995,7 @@ class ReplicaPlaybackController {
     await _engine.stop();
     _isPlaying = false;
     _isLoading = false;
+    _hasLoadedCurrentTrack = false;
     _upNextTrackIds.clear();
     _emitState();
     _persistNow();

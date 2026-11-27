@@ -37,6 +37,7 @@ class YMusicPlayerBridge(private val context: Context) {
     private var lastPlaying: Boolean? = null
     private var lastState: PlaybackState? = null
     private var lastDurationMs: Long = -1L
+    private var pendingLoad: MethodChannel.Result? = null
 
     fun attach(messenger: BinaryMessenger) {
         val ch = MethodChannel(messenger, "io.replicamedia.replica/player")
@@ -53,6 +54,9 @@ class YMusicPlayerBridge(private val context: Context) {
                             val path = call.argument<String>("path").orEmpty()
                             val startMs = (call.argument<Number>("initialPositionMs")?.toLong() ?: 0L).coerceAtLeast(0L)
                             ensurePlayer()
+                            finishLoad()
+                            pendingLoad = result
+                            lastDurationMs = -1L
                             val ym = ymusicPlayer
                             if (ym != null) {
                                 ym.load(
@@ -70,7 +74,6 @@ class YMusicPlayerBridge(private val context: Context) {
                                 exo.setMediaItem(MediaItem.fromUri(uri), startMs)
                                 exo.prepare()
                             }
-                            result.success(null)
                         }
                         "play" -> {
                             ensurePlayer()
@@ -87,16 +90,24 @@ class YMusicPlayerBridge(private val context: Context) {
                             result.success(true)
                         }
                         "stop" -> {
+                            finishLoad()
                             ymusicPlayer?.stop() ?: exoPlayer?.stop()
                             result.success(true)
                         }
                         else -> result.notImplemented()
                     }
                 } catch (t: Throwable) {
+                    if (pendingLoad === result) pendingLoad = null
                     result.error("player_error", t.message ?: t.javaClass.simpleName, null)
                 }
             }
         }
+    }
+
+    private fun finishLoad(error: String? = null) {
+        val result = pendingLoad ?: return
+        pendingLoad = null
+        if (error == null) result.success(null) else result.error("player_error", error, null)
     }
 
     private fun ensurePlayer() {
@@ -108,7 +119,10 @@ class YMusicPlayerBridge(private val context: Context) {
             ymusicPlayer = ym
             scope.launch {
                 ym.status.collect { status ->
-                    val isPlaying = status.state.isPlaying()
+                    val state = status.state
+                    if (state is PlaybackState.Prepared && !state.buffering) finishLoad()
+                    if (state is PlaybackState.Error) finishLoad(state.error.message ?: "재생 오류")
+                    val isPlaying = state.isPlaying()
                     if (lastPlaying != isPlaying) {
                         lastPlaying = isPlaying
                         channel?.invokeMethod("playing", isPlaying)
@@ -141,7 +155,7 @@ class YMusicPlayerBridge(private val context: Context) {
             .build()
         val exo = ExoPlayer.Builder(context.applicationContext)
             .setLooper(Looper.getMainLooper())
-            .setAudioAttributes(attrs, true)
+            .setAudioAttributes(attrs, false)
             .setHandleAudioBecomingNoisy(true)
             .build()
         exo.addListener(object : Player.Listener {
@@ -154,6 +168,7 @@ class YMusicPlayerBridge(private val context: Context) {
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
+                    finishLoad()
                     val dur = exo.duration
                     if (dur > 0L && dur != lastDurationMs) {
                         lastDurationMs = dur
@@ -165,6 +180,7 @@ class YMusicPlayerBridge(private val context: Context) {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                finishLoad(error.message ?: "재생 오류")
                 channel?.invokeMethod("error", error.message ?: "재생 오류")
             }
         })
@@ -188,6 +204,7 @@ class YMusicPlayerBridge(private val context: Context) {
         channel?.setMethodCallHandler(null)
         channel = null
         mainHandler.post {
+            finishLoad()
             ymusicPlayer?.release()
             ymusicPlayer = null
             exoPlayer?.release()

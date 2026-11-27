@@ -74,9 +74,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
   bool _isEditingPlaylist = false;
   bool _isSavingPlaylistEdit = false;
   List<TrackItem> _editingTracks = const [];
-  bool _isSelectingLocalDeletes = false;
-  Set<String> _selectedLocalDeleteIds = {};
-  bool _isDeletingSelectedLocal = false;
+  final Set<TrackItem> _selectedEditingTracks = {};
   bool _isRunningStorageCleanup = false;
   int _cachedDownloadedBytes = 0;
   int _sessionGeneration = 0;
@@ -2008,36 +2006,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
   }
 
   void _onTrackRowTap(TrackItem track, {required List<TrackItem> queue}) {
-    if (_downloadManager.resolveLocalPath(track) != null) {
-      unawaited(_downloadAndPlay(track, queue: queue));
-      return;
-    }
-    _startTrackDownloadOnly(track);
-  }
-
-  void _startTrackDownloadOnly(TrackItem track) {
-    if (_isTrackDownloading(track.id)) {
-      _downloadManager.promoteTrackDownload(track.id);
-      return;
-    }
-    unawaited(_runTrackDownloadOnly(track));
-  }
-
-  Future<void> _runTrackDownloadOnly(TrackItem track) async {
-    try {
-      await _downloadManager.ensureLocalFile(
-        track,
-        allowNetwork: true,
-        highPriority: true,
-      );
-    } catch (e) {
-      if (mounted) {
-        final msg = e.toString().replaceFirst('Exception: ', '');
-        if (!msg.contains('취소')) {
-          _showSnack('다운로드 실패: $msg');
-        }
-      }
-    }
+    unawaited(_downloadAndPlay(track, queue: queue));
   }
 
   Future<void> _skipToNextTrack() async {
@@ -2482,6 +2451,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
   Future<void> _deleteDownloadedTrack(
     TrackItem track, {
     bool removeFromQueue = false,
+    bool showSuccess = true,
   }) async {
     if (_env.storageDir.isEmpty) {
       return;
@@ -2501,85 +2471,9 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
       if (isActiveTrack || removeFromQueue) {
         await _playback.removeTrackFromQueueAndAdvance(track.id);
       }
-      _showSnack('로컬 음원을 삭제했습니다.');
+      if (showSuccess) _showSnack('로컬 음원을 삭제했습니다.');
     } catch (e) {
       _showSnack('삭제 실패: ${e.toString().replaceFirst('Exception: ', '')}');
-    }
-  }
-
-  void _enterLocalDeleteSelectionMode() {
-    setState(() {
-      _isSelectingLocalDeletes = true;
-      _selectedLocalDeleteIds = {};
-    });
-  }
-
-  void _cancelLocalDeleteSelectionMode() {
-    setState(() {
-      _isSelectingLocalDeletes = false;
-      _selectedLocalDeleteIds = {};
-    });
-  }
-
-  void _toggleLocalDeleteSelection(String trackId) {
-    setState(() {
-      final next = Set<String>.of(_selectedLocalDeleteIds);
-      if (!next.remove(trackId)) {
-        next.add(trackId);
-      }
-      _selectedLocalDeleteIds = next;
-    });
-  }
-
-  void _toggleSelectAllLocalDeletes() {
-    final allIds = _downloadedTracks.map((t) => t.id).toSet();
-    setState(() {
-      if (_selectedLocalDeleteIds.length == allIds.length &&
-          allIds.isNotEmpty) {
-        _selectedLocalDeleteIds = {};
-      } else {
-        _selectedLocalDeleteIds = allIds;
-      }
-    });
-  }
-
-  Future<void> _confirmSelectedLocalDeletes() async {
-    if (_isDeletingSelectedLocal ||
-        _selectedLocalDeleteIds.isEmpty ||
-        _env.storageDir.isEmpty) {
-      return;
-    }
-    setState(() => _isDeletingSelectedLocal = true);
-    final targets = Set<String>.of(_selectedLocalDeleteIds);
-    try {
-      final activeId = _playback.activeTrack?.id;
-      if (activeId != null && targets.contains(activeId)) {
-        await _playback.removeTrackFromQueueAndAdvance(activeId);
-      }
-      var deletedCount = 0;
-      for (final videoId in targets) {
-        _downloadManager.removeFromDownloadedIndex(videoId);
-        try {
-          await widget.core.invoke({
-            'op': 'delete_downloaded',
-            'video_id': videoId,
-            'storage_dir': _env.storageDir,
-          });
-          deletedCount++;
-        } catch (_) {}
-      }
-      await _refreshDownloadedTracks();
-      if (mounted) {
-        setState(() {
-          _isSelectingLocalDeletes = false;
-          _selectedLocalDeleteIds = {};
-        });
-        _showSnack('선택한 음원 $deletedCount곡을 삭제했습니다.');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isDeletingSelectedLocal = false);
-      }
     }
   }
 
@@ -3185,7 +3079,6 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
             .toList(growable: false);
       });
       await _saveCachedPlaylists();
-      _showSnack('재생 목록 변경사항을 YouTube에 반영했습니다.');
       return true;
     } catch (_) {
       return false;
@@ -3202,9 +3095,11 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
   }
 
   void _cancelPlaylistEditMode() {
+    if (_isSavingPlaylistEdit) return;
     setState(() {
       _isEditingPlaylist = false;
       _editingTracks = const [];
+      _selectedEditingTracks.clear();
     });
   }
 
@@ -3226,6 +3121,35 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     setState(() => _isSavingPlaylistEdit = true);
     try {
       if (!mounted) {
+        return;
+      }
+      if (playlist.id == _allSongsPlaylistId) {
+        final keptIds = edited.map((track) => track.id).toSet();
+        final activeId = _playback.activeTrack?.id;
+        final removed = playlist.tracks.where(
+          (track) => !keptIds.contains(track.id),
+        );
+        for (final track in removed.where((track) => track.id != activeId)) {
+          await _deleteDownloadedTrack(
+            track,
+            removeFromQueue: true,
+            showSuccess: false,
+          );
+        }
+        for (final track in removed.where((track) => track.id == activeId)) {
+          await _deleteDownloadedTrack(
+            track,
+            removeFromQueue: true,
+            showSuccess: false,
+          );
+        }
+        if (mounted) {
+          setState(() {
+            _isEditingPlaylist = false;
+            _editingTracks = const [];
+            _selectedEditingTracks.clear();
+          });
+        }
         return;
       }
       final isHistory = _isHistoryPlaylist(playlist);
@@ -3251,20 +3175,16 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
             .toList(growable: false);
         _isEditingPlaylist = false;
         _editingTracks = const [];
+        _selectedEditingTracks.clear();
       });
       await _saveCachedPlaylists();
       if (playlist.isRemote && _webSession != null) {
-        final synced = await _pushLocalPlaylistToRemote(
+        await _pushLocalPlaylistToRemote(
           playlist.copyWith(remoteTitle: newRemoteTitle, updatedAt: newTs),
           edited,
           targetRemoteTitle: isHistory ? null : newRemoteTitle,
           targetUpdatedAt: isHistory ? null : newTs,
         );
-        if (!synced && mounted) {
-          _showSnack('로컬에 저장했으며 온라인 시 YouTube에 반영합니다.');
-        }
-      } else {
-        _showSnack('재생 목록 변경사항을 저장했습니다.');
       }
     } finally {
       if (mounted) {
@@ -3324,8 +3244,8 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                 isAllSongs
                     ? [
                         (
-                          value: 'select_delete_local',
-                          label: '저장된 음원 삭제',
+                          value: 'edit',
+                          label: '편집',
                           enabled: playlist.tracks.isNotEmpty,
                         ),
                       ]
@@ -3333,14 +3253,14 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                     ? [
                         (
                           value: 'edit',
-                          label: '수정',
+                          label: '편집',
                           enabled: playlist.tracks.isNotEmpty,
                         ),
                       ]
                     : [
                         (
                           value: 'edit',
-                          label: '수정',
+                          label: '편집',
                           enabled: playlist.tracks.isNotEmpty,
                         ),
                         (
@@ -3363,9 +3283,6 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                 return;
               }
               switch (action) {
-                case 'select_delete_local':
-                  _enterLocalDeleteSelectionMode();
-                  break;
                 case 'edit':
                   _enterPlaylistEditMode(playlist);
                   break;
@@ -4278,91 +4195,96 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
           final canExit =
               (isSplitMode || !_isNowPlayingOpen) &&
               !_isEditingPlaylist &&
-              !_isSelectingLocalDeletes &&
               _selectedPlaylistId == null &&
               _tabIndex == 1;
 
-          final mainWorkspaceContent = Column(
-            children: [
-              if (_isUpdatingApp)
-                SafeArea(
-                  bottom: false,
-                  child: const LinearProgressIndicator(
-                    minHeight: 2,
-                    color: replicaAccentColor,
-                  ),
-                ),
-              Expanded(
-                child: Builder(
-                  builder: (pageContext) {
-                    final parentMedia = MediaQuery.of(pageContext);
-                    final pageMedia = parentMedia.copyWith(
-                      gestureSettings: const DeviceGestureSettings(
-                        touchSlop: 38.0,
-                      ),
-                    );
-                    return IndexedStack(
-                      index: _tabIndex == 0 ? 0 : 1,
-                      children: [
-                        TickerMode(
-                          enabled: _tabIndex == 0,
-                          child: SafeArea(
-                            bottom: false,
-                            child: _buildSettingsPane(context),
-                          ),
+          final mainWorkspaceContent =
+              _isEditingPlaylist && detailPlaylist != null
+              ? _buildPlaylistEditor(context, detailPlaylist)
+              : Column(
+                  children: [
+                    if (_isUpdatingApp)
+                      SafeArea(
+                        bottom: false,
+                        child: const LinearProgressIndicator(
+                          minHeight: 2,
+                          color: replicaAccentColor,
                         ),
-                        TickerMode(
-                          enabled: _tabIndex != 0,
-                          child: MediaQuery(
-                            data: pageMedia,
-                            child: PageView(
-                              key: const Key('main-tab-pageview'),
-                              controller: _tabPageController,
-                              physics: const _IntentionalPageScrollPhysics(),
-                              onPageChanged: (pageIdx) {
-                                final newTab = pageIdx + 1;
-                                if (newTab != 2) {
-                                  FocusManager.instance.primaryFocus?.unfocus();
-                                }
-                                if (_tabIndex != 0 && _tabIndex != newTab) {
-                                  setState(() => _tabIndex = newTab);
-                                }
-                              },
-                              children: [
-                                MediaQuery(
-                                  data: parentMedia,
-                                  child: detailPlaylist != null
-                                      ? _buildPlaylistDetailPane(
-                                          context,
-                                          detailPlaylist,
-                                          showBackButton: true,
-                                        )
-                                      : SafeArea(
-                                          bottom: false,
-                                          child: _buildLibraryPane(
-                                            context,
-                                            visiblePlaylists,
-                                          ),
-                                        ),
+                      ),
+                    Expanded(
+                      child: Builder(
+                        builder: (pageContext) {
+                          final parentMedia = MediaQuery.of(pageContext);
+                          final pageMedia = parentMedia.copyWith(
+                            gestureSettings: const DeviceGestureSettings(
+                              touchSlop: 38.0,
+                            ),
+                          );
+                          return IndexedStack(
+                            index: _tabIndex == 0 ? 0 : 1,
+                            children: [
+                              TickerMode(
+                                enabled: _tabIndex == 0,
+                                child: SafeArea(
+                                  bottom: false,
+                                  child: _buildSettingsPane(context),
                                 ),
-                                MediaQuery(
-                                  data: parentMedia,
-                                  child: SafeArea(
-                                    bottom: false,
-                                    child: _buildSearchPane(context),
+                              ),
+                              TickerMode(
+                                enabled: _tabIndex != 0,
+                                child: MediaQuery(
+                                  data: pageMedia,
+                                  child: PageView(
+                                    key: const Key('main-tab-pageview'),
+                                    controller: _tabPageController,
+                                    physics:
+                                        const _IntentionalPageScrollPhysics(),
+                                    onPageChanged: (pageIdx) {
+                                      final newTab = pageIdx + 1;
+                                      if (newTab != 2) {
+                                        FocusManager.instance.primaryFocus
+                                            ?.unfocus();
+                                      }
+                                      if (_tabIndex != 0 &&
+                                          _tabIndex != newTab) {
+                                        setState(() => _tabIndex = newTab);
+                                      }
+                                    },
+                                    children: [
+                                      MediaQuery(
+                                        data: parentMedia,
+                                        child: detailPlaylist != null
+                                            ? _buildPlaylistDetailPane(
+                                                context,
+                                                detailPlaylist,
+                                                showBackButton: true,
+                                              )
+                                            : SafeArea(
+                                                bottom: false,
+                                                child: _buildLibraryPane(
+                                                  context,
+                                                  visiblePlaylists,
+                                                ),
+                                              ),
+                                      ),
+                                      MediaQuery(
+                                        data: parentMedia,
+                                        child: SafeArea(
+                                          bottom: false,
+                                          child: _buildSearchPane(context),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
-          );
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
 
           return PopScope(
             canPop: canExit,
@@ -4374,8 +4296,6 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                 _closeNowPlayingSheet();
               } else if (_tabIndex != 1) {
                 _selectTab(1);
-              } else if (_isSelectingLocalDeletes) {
-                _cancelLocalDeleteSelectionMode();
               } else if (_isEditingPlaylist) {
                 _cancelPlaylistEditMode();
               } else if (_selectedPlaylistId != null) {
@@ -4425,10 +4345,11 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                                               ),
                                               const SizedBox(height: 12),
                                             ],
-                                            _buildBottomNavStrip(
-                                              context,
-                                              splitModeSwapEnabled: true,
-                                            ),
+                                            if (!_isEditingPlaylist)
+                                              _buildBottomNavStrip(
+                                                context,
+                                                splitModeSwapEnabled: true,
+                                              ),
                                           ],
                                         ),
                                       ),
@@ -4486,7 +4407,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                         return Stack(
                           children: [
                             Positioned.fill(child: mainWorkspaceContent),
-                            if (isWideLandscape) ...[
+                            if (!_isEditingPlaylist && isWideLandscape) ...[
                               Positioned(
                                 left: 14,
                                 width: (halfWidth - 28).clamp(120.0, 800.0),
@@ -4523,7 +4444,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                                   ),
                                 ),
                               ),
-                            ] else
+                            ] else if (!_isEditingPlaylist)
                               Positioned(
                                 left: 14,
                                 right: 14,
@@ -5735,8 +5656,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     setState(() {
       _isEditingPlaylist = false;
       _editingTracks = const [];
-      _isSelectingLocalDeletes = false;
-      _selectedLocalDeleteIds = {};
+      _selectedEditingTracks.clear();
       _selectedPlaylistId = playlist.id;
     });
     if (!isAllSongs && playlist.isRemote) {
@@ -6105,6 +6025,196 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPlaylistEditor(BuildContext context, PlaylistItem playlist) {
+    final theme = Theme.of(context);
+    final canReorder = playlist.id != _allSongsPlaylistId;
+    final allSelected =
+        _editingTracks.isNotEmpty &&
+        _selectedEditingTracks.length == _editingTracks.length;
+
+    Widget buildTrack(BuildContext context, int index) {
+      final track = _editingTracks[index];
+      final selected = _selectedEditingTracks.contains(track);
+      void toggleSelection() {
+        if (_isSavingPlaylistEdit) return;
+        setState(() {
+          if (!_selectedEditingTracks.remove(track)) {
+            _selectedEditingTracks.add(track);
+          }
+        });
+      }
+
+      return Material(
+        key: ObjectKey(track),
+        child: InkWell(
+          key: Key('edit-select-${track.id}'),
+          onTap: toggleSelection,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Semantics(
+                  checked: selected,
+                  child: Icon(
+                    selected
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    color: selected
+                        ? replicaAccentColor
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                _CoverBox(
+                  color: track.coverColor,
+                  size: 52,
+                  radius: 10,
+                  imageUrl: track.thumbnail,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        track.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                      Text(
+                        track.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                if (canReorder)
+                  ReorderableDragStartListener(
+                    index: index,
+                    enabled: !_isSavingPlaylistEdit,
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Icon(
+                        Icons.drag_handle_rounded,
+                        key: Key('edit-drag-${track.id}'),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SafeArea(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Row(
+              children: [
+                _DockCircleButton(
+                  key: const Key('detail-back-button'),
+                  tooltip: '뒤로가기',
+                  icon: Icons.chevron_left_rounded,
+                  iconColor: replicaAccentColor,
+                  size: 42,
+                  iconSize: 26,
+                  onPressed: _isSavingPlaylistEdit
+                      ? null
+                      : _cancelPlaylistEditMode,
+                ),
+                const Spacer(),
+                _DockCircleButton(
+                  key: const Key('detail-edit-confirm'),
+                  tooltip: '확정',
+                  icon: Icons.check_rounded,
+                  iconColor: replicaAccentColor,
+                  size: 42,
+                  iconSize: 24,
+                  onPressed: _isSavingPlaylistEdit
+                      ? null
+                      : () => unawaited(_confirmPlaylistEditMode(playlist)),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                if (canReorder)
+                  SliverReorderableList(
+                    itemCount: _editingTracks.length,
+                    itemBuilder: buildTrack,
+                    onReorder: (from, to) {
+                      setState(() {
+                        final track = _editingTracks.removeAt(from);
+                        _editingTracks.insert(from < to ? to - 1 : to, track);
+                      });
+                    },
+                  )
+                else
+                  SliverList.builder(
+                    itemCount: _editingTracks.length,
+                    itemBuilder: buildTrack,
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 5, 14, 10),
+            child: _FloatingDockCapsule(
+              key: const Key('playlist-edit-dock'),
+              height: _dockHeight,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton.icon(
+                    onPressed: _editingTracks.isEmpty || _isSavingPlaylistEdit
+                        ? null
+                        : () {
+                            setState(() {
+                              _selectedEditingTracks.clear();
+                              if (!allSelected) {
+                                _selectedEditingTracks.addAll(_editingTracks);
+                              }
+                            });
+                          },
+                    icon: Icon(
+                      allSelected
+                          ? Icons.check_circle_rounded
+                          : Icons.done_all_rounded,
+                    ),
+                    label: Text(allSelected ? '전체 해제' : '전체 선택'),
+                  ),
+                  TextButton.icon(
+                    onPressed:
+                        _selectedEditingTracks.isEmpty || _isSavingPlaylistEdit
+                        ? null
+                        : () {
+                            setState(() {
+                              _editingTracks.removeWhere(
+                                _selectedEditingTracks.contains,
+                              );
+                              _selectedEditingTracks.clear();
+                            });
+                          },
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const Text('삭제'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -6483,7 +6593,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                         },
                       ),
                     ),
-                  if (isAllSongs && !_isSelectingLocalDeletes)
+                  if (isAllSongs)
                     ...() {
                       final downloadedIds = playlist.tracks
                           .map((t) => t.id)
@@ -6581,135 +6691,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                         ),
                       ];
                     }(),
-                  if (_isEditingPlaylist)
-                    SliverReorderableList(
-                      itemCount: _editingTracks.length,
-                      onReorder: (oldIndex, newIndex) {
-                        setState(() {
-                          var target = newIndex;
-                          if (oldIndex < target) {
-                            target -= 1;
-                          }
-                          final updated = List<TrackItem>.of(_editingTracks);
-                          final moved = updated.removeAt(oldIndex);
-                          updated.insert(target, moved);
-                          _editingTracks = updated;
-                        });
-                      },
-                      itemBuilder: (context, index) {
-                        final track = _editingTracks[index];
-                        final theme = Theme.of(context);
-                        final isDark = theme.brightness == Brightness.dark;
-                        final dividerColor = isDark
-                            ? Colors.white.withValues(alpha: 0.10)
-                            : Colors.black.withValues(alpha: 0.12);
-                        return Material(
-                          key: ValueKey('edit-track-${track.id}-$index'),
-                          color: Colors.transparent,
-                          child: SizedBox(
-                            height: 80,
-                            child: Stack(
-                              children: [
-                                Positioned.fill(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        IconButton(
-                                          key: Key('edit-remove-${track.id}'),
-                                          tooltip: '삭제',
-                                          icon: const Icon(
-                                            Icons.remove_circle_rounded,
-                                            color: replicaAccentColor,
-                                            size: 24,
-                                          ),
-                                          onPressed: () {
-                                            setState(() {
-                                              _editingTracks =
-                                                  List<TrackItem>.of(
-                                                    _editingTracks,
-                                                  )..removeAt(index);
-                                            });
-                                          },
-                                        ),
-                                        _CoverBox(
-                                          color: track.coverColor,
-                                          size: 56,
-                                          radius: 10,
-                                          imageUrl: track.thumbnail,
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Expanded(
-                                          child: Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                track.title,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: theme.textTheme.bodyLarge
-                                                    ?.copyWith(
-                                                      fontSize: 15.5,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '${track.artist} • ${track.duration}',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: theme
-                                                          .colorScheme
-                                                          .onSurfaceVariant,
-                                                    ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        ReorderableDragStartListener(
-                                          index: index,
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(8),
-                                            child: Icon(
-                                              Icons.drag_handle_rounded,
-                                              key: Key('edit-drag-${track.id}'),
-                                              size: 24,
-                                              color: theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                if (index < _editingTracks.length - 1)
-                                  Positioned(
-                                    left: 118,
-                                    right: 16,
-                                    bottom: 0,
-                                    child: Divider(
-                                      height: 0.6,
-                                      thickness: 0.6,
-                                      color: dividerColor,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    )
-                  else if (playlist.tracks.isEmpty &&
+                  if (playlist.tracks.isEmpty &&
                       (!isAllSongs || _downloadingTracks.isEmpty))
                     SliverFillRemaining(
                       hasScrollBody: false,
@@ -6732,34 +6714,6 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                       itemBuilder: (context, index) {
                         final track = playlist.tracks[index];
                         final isCurrent = _activeTrack?.id == track.id;
-                        if (isAllSongs && _isSelectingLocalDeletes) {
-                          final selected = _selectedLocalDeleteIds.contains(
-                            track.id,
-                          );
-                          return _buildMediaListRow(
-                            context,
-                            key: Key('local-delete-tile-${track.id}'),
-                            coverColor: track.coverColor,
-                            imageUrl: track.thumbnail,
-                            title: track.title,
-                            subtitle: '${track.artist} • ${track.duration}',
-                            isDownloaded: track.isDownloaded,
-                            highlighted: selected,
-                            showDivider: index < playlist.tracks.length - 1,
-                            trailing: Icon(
-                              selected
-                                  ? Icons.check_circle_rounded
-                                  : Icons.radio_button_unchecked_rounded,
-                              color: selected
-                                  ? replicaAccentColor
-                                  : Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                              size: 24,
-                            ),
-                            onTap: () => _toggleLocalDeleteSelection(track.id),
-                          );
-                        }
                         return _buildMediaListRow(
                           context,
                           key: Key('track-tile-${track.id}'),
@@ -6807,83 +6761,11 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                       iconColor: replicaAccentColor,
                       size: 42,
                       iconSize: 26,
-                      onPressed: () {
-                        if (_isSelectingLocalDeletes) {
-                          _cancelLocalDeleteSelectionMode();
-                        } else if (_isEditingPlaylist) {
-                          _cancelPlaylistEditMode();
-                        } else {
-                          setState(() => _selectedPlaylistId = null);
-                        }
-                      },
+                      onPressed: () =>
+                          setState(() => _selectedPlaylistId = null),
                     ),
                   const Spacer(),
-                  if (isAllSongs && _isSelectingLocalDeletes) ...[
-                    _DockCircleButton(
-                      key: const Key('local-delete-select-all'),
-                      tooltip: '전체 선택',
-                      icon: Icons.done_all_rounded,
-                      iconColor: replicaAccentColor,
-                      size: 42,
-                      iconSize: 22,
-                      onPressed: _isDeletingSelectedLocal
-                          ? null
-                          : _toggleSelectAllLocalDeletes,
-                    ),
-                    const SizedBox(width: 8),
-                    _DockCircleButton(
-                      key: const Key('local-delete-cancel'),
-                      tooltip: '취소',
-                      icon: Icons.close_rounded,
-                      iconColor: replicaAccentColor,
-                      size: 42,
-                      iconSize: 24,
-                      onPressed: _isDeletingSelectedLocal
-                          ? null
-                          : _cancelLocalDeleteSelectionMode,
-                    ),
-                    const SizedBox(width: 8),
-                    _DockCircleButton(
-                      key: const Key('local-delete-confirm'),
-                      tooltip: '선택 삭제',
-                      icon: Icons.delete_outline_rounded,
-                      iconColor: _selectedLocalDeleteIds.isNotEmpty
-                          ? replicaAccentColor
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                      size: 42,
-                      iconSize: 24,
-                      onPressed:
-                          (_isDeletingSelectedLocal ||
-                              _selectedLocalDeleteIds.isEmpty)
-                          ? null
-                          : () => unawaited(_confirmSelectedLocalDeletes()),
-                    ),
-                  ] else if (!isAllSongs && _isEditingPlaylist) ...[
-                    _DockCircleButton(
-                      key: const Key('detail-edit-cancel'),
-                      tooltip: '취소',
-                      icon: Icons.close_rounded,
-                      iconColor: replicaAccentColor,
-                      size: 42,
-                      iconSize: 24,
-                      onPressed: _isSavingPlaylistEdit
-                          ? null
-                          : _cancelPlaylistEditMode,
-                    ),
-                    const SizedBox(width: 8),
-                    _DockCircleButton(
-                      key: const Key('detail-edit-confirm'),
-                      tooltip: '적용',
-                      icon: Icons.check_rounded,
-                      iconColor: replicaAccentColor,
-                      size: 42,
-                      iconSize: 24,
-                      onPressed: _isSavingPlaylistEdit
-                          ? null
-                          : () => unawaited(_confirmPlaylistEditMode(playlist)),
-                    ),
-                  ] else
-                    _buildPlaylistContextMenuButton(context, playlist),
+                  _buildPlaylistContextMenuButton(context, playlist),
                 ],
               ),
             ),

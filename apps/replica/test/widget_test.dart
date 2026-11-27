@@ -289,9 +289,9 @@ void main() {
     expect(extractHistoryDeviceName('History.rm'), isNull);
   });
 
-  test('Backend bridge returns 0.4.2 and enforces .rm rules', () {
+  test('Backend bridge returns 0.4.3 and enforces .rm rules', () {
     final core = NativeReplicaMusicCore.openOrFallback();
-    expect(core.coreVersion, '0.4.2');
+    expect(core.coreVersion, '0.4.3');
     expect(core.isReplicaPlaylist('Chill.rm'), isTrue);
     expect(core.isReplicaPlaylist('Chill'), isFalse);
     expect(core.toRemotePlaylistTitle('Chill'), 'Chill.rm');
@@ -1035,7 +1035,7 @@ void main() {
   });
 
   testWidgets(
-    'Tapping undownloaded track downloads only with determinate progress and shows in Saved Songs',
+    'Tapping undownloaded track stops playback and starts the selected song after saving',
     (tester) async {
       tester.view.devicePixelRatio = 1.0;
       tester.view.physicalSize = const Size(360, 840);
@@ -1043,6 +1043,7 @@ void main() {
 
       final adapters = _FakeMediaAdapters();
       final core = _FakeDownloadFlowCore();
+      final handler = ReplicaAudioServiceHandler();
       final engine = _FakeAudioEngine();
       final downloadCompleter = Completer<Map<String, dynamic>>();
       core.trackDownloadCompleter = downloadCompleter;
@@ -1052,12 +1053,21 @@ void main() {
           core: core,
           adapters: adapters,
           audioEngine: engine,
+          audioServiceHandler: handler,
           fileExistsOverride: (path) =>
               path.contains('track-1') ||
               path.contains('track-2') ||
               path.contains('new-track-1'),
         ),
       );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('playlist-tile-all-songs')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('First Track'));
+      await tester.pumpAndSettle();
+      expect(handler.playbackState.value.playing, isTrue);
+      await tester.tap(find.byKey(const Key('detail-back-button')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.search_outlined));
@@ -1071,7 +1081,8 @@ void main() {
       await tester.tap(find.text('Undownloaded Song'));
       await tester.pump();
 
-      expect(engine.loadedPaths, isEmpty);
+      expect(engine.loadedPaths.single, contains('track-1.m4a'));
+      expect(handler.playbackState.value.playing, isFalse);
       expect(
         find.byKey(const Key('track-downloading-new-track-1')),
         findsOneWidget,
@@ -1137,12 +1148,38 @@ void main() {
       });
       await tester.pumpAndSettle();
 
-      expect(engine.loadedPaths, isEmpty);
+      expect(engine.loadedPaths.last, contains('new-track-1.m4a'));
+      expect(handler.playbackState.value.playing, isTrue);
       expect(
         find.byKey(const Key('all-songs-downloading-header')),
         findsNothing,
       );
-      expect(find.text('Undownloaded Song'), findsOneWidget);
+      expect(find.byKey(const Key('track-tile-new-track-1')), findsOneWidget);
+      final editTrackKey = find.byKey(const Key('edit-select-new-track-1'));
+      await tester.tap(find.byKey(const Key('detail-more-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('편집'));
+      await tester.pump();
+      await tester.pumpAndSettle(const Duration(milliseconds: 150));
+      expect(find.byKey(const Key('playlist-edit-dock')), findsOneWidget);
+      expect(find.byKey(const Key('mini-player')), findsNothing);
+      expect(find.byKey(const Key('bottom-nav-bar')), findsNothing);
+      expect(find.byIcon(Icons.drag_handle_rounded), findsNothing);
+
+      await tester.tap(find.text('전체 선택'));
+      await tester.pumpAndSettle();
+      expect(find.text('전체 해제'), findsOneWidget);
+      await tester.tap(find.text('전체 해제'));
+      await tester.pumpAndSettle();
+      await tester.tap(editTrackKey);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('삭제'));
+      await tester.pumpAndSettle();
+      expect(editTrackKey, findsNothing);
+      await tester.tap(find.byKey(const Key('detail-back-button')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('track-tile-new-track-1')), findsOneWidget);
+
       expect(core.downloadRequests.last['format'], 'opus');
     },
   );

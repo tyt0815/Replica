@@ -50,7 +50,7 @@ class ReplicaBackend(
     private val cookieProvider: () -> String,
     private val engineManager: DynamicEngineManager,
     private val playerEngineFactory: () -> DynamicEnginePlayer,
-    val coreVersion: String = "0.4.2",
+    val coreVersion: String = "0.4.3",
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val innertube = InnertubeSupplement(httpClient, cookieProvider)
@@ -436,7 +436,7 @@ class ReplicaBackend(
         val artist = trackObj["artist"]?.jsonPrimitive?.content?.trim().orEmpty()
         val duration = trackObj["duration"]?.jsonPrimitive?.content?.trim().orEmpty()
         val thumbnail = trackObj["thumbnail"]?.jsonPrimitive?.content?.trim().orEmpty()
-        val preferredFormat = req["preferred_format"]?.jsonPrimitive?.content?.lowercase() ?: "opus"
+        val preferredFormat = (req["format"] ?: req["preferred_format"])?.jsonPrimitive?.content?.lowercase() ?: "opus"
 
         if (videoId.isEmpty()) throw IllegalArgumentException("video_id가 비어 있습니다.")
         storageDir.mkdirs()
@@ -499,11 +499,12 @@ class ReplicaBackend(
                 put("thumbnail", thumbnail)
                 put("file_path", finalFile.absolutePath)
                 put("file_name", finalFile.name)
+                put("bytes", finalFile.length())
                 put("downloaded_at_ms", System.currentTimeMillis())
             }
             File(metaDir, "$videoId.json").writeText(metaObj.toString(), Charsets.UTF_8)
 
-            return buildJsonObject { put("track", metaObj) }
+            return buildJsonObject { put("downloaded", metaObj) }
         } finally {
             activeDownloads.remove(videoId)
             trackProgress.remove(videoId)
