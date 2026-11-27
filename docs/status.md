@@ -11,6 +11,8 @@
 
 ## 확인한 동작
 
+- `0.4.0` 커밋 `6078b51`에 태그 `v0.4.0`을 붙여 [v0.4.0 릴리스](https://github.com/tyt0815/Replica/releases/tag/v0.4.0)를 게시했다.
+- 첨부 파일은 `Replica-0.4.0-release.apk`(19.9MB)와 `Replica-0.4.0-release.apk.sha256`이다. `./scripts/release-android.ps1`로 게시 전후 내려받은 APK의 SHA-256(`fadf9064e994f299173655bd81f928094f7ca989b5dbe4e45094ea13f3eead10`) 일치를 확인했다.
 - `git submodule status --recursive`: `vendor/YMusicV4` 변경 없음 확인.
 - `./scripts/check-android.ps1`: `flutter pub get`, `dart format`(0 changed), `flutter analyze`(이슈 없음), 위젯 테스트 14개 통과, Release APK(`dist/Replica-0.4.0-release.apk`, 19.9MB) 빌드 및 배포 인증서 지문(`4b61423c...`)·패키지 ID(`io.replicamedia.replica`)·버전(`0.4.0+4`) 검증 완료.
 - Android 15 x86_64 에뮬레이터(`emulator-5580`) 검증:
