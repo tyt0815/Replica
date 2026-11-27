@@ -11,6 +11,8 @@
 
 ## 확인한 동작
 
+- `0.3.0` 커밋 `40faa9c`에 태그 `v0.3.0`을 붙여 [v0.3.0 릴리스](https://github.com/tyt0815/Replica/releases/tag/v0.3.0)를 게시했다.
+- 첨부 파일은 `Replica-0.3.0-release.apk`(45.8MB)와 `Replica-0.3.0-release.apk.sha256`이다. `./scripts/release-android.ps1`로 게시 전후 내려받은 APK의 SHA-256(`9edc56c11402b2dd3ba2a5fa311416f78f34b1cc12896695d6ce7e54833041fa`) 일치를 확인했다.
 - `cargo test`: Rust 코어 테스트 31개 통과 (1개 live 테스트 무시).
 - `./scripts/check-android.ps1`: Rust 호스트·Android 빌드, `flutter pub get`, `dart format` 검사, `flutter analyze`(이슈 없음), 위젯 테스트 14개 전부 통과, Release APK(`dist/Replica-0.3.0-release.apk`, 45.8MB) 빌드와 배포 인증서 지문(`4b61423c...`)·패키지 ID(`io.replicamedia.replica`)·버전(`0.3.0+3`) 검증 완료.
 - Android 15 x86_64 에뮬레이터(`emulator-5580`) 검증:
@@ -24,12 +26,9 @@
 
 - ARM64 실기기 검증은 남아 있다.
 - Fold8 커버·내부 화면의 세로·가로 회전과 접기·펼치기 실기기 검증은 남아 있다(위젯 테스트로 4가지 화면 상태 레이아웃은 검증됨).
-- `0.3.0`은 로컬 검증 및 빌드 완료 상태이며 GitHub Release 게시는 아직 진행하지 않았다.
-- Flutter는 현재 Gradle, Android Gradle Plugin, Kotlin 버전에 대해 향후 지원 종료 경고를 출력한다.
-
 ## 다음 시작점
 
-필요 시 `0.3.0` 릴리스 노트를 작성해 GitHub Releases에 게시한다. 이후 영상 재생 화면과 YMusic 엔진/OTA 통합, Windows 앱 확장을 진행한다.
+영상 재생 화면과 YMusic 엔진/OTA 통합, Windows 앱 확장을 진행한다.
 
 ## 배포 인계
 
