@@ -1,5 +1,12 @@
 # 개발 상태
 
+## Android 0.4.1 수정
+
+- 재생목록 편집 시 YouTube 항목 ID로 곡을 이동한다. 원격 순서를 확인한 뒤 버전이 포함된 목록 이름을 반영한다.
+- Android 기본·원형 런처 아이콘 XML 네 개를 ReplicaTube 원본과 해시로 대조했다. 배경은 #FF0035다.
+- ./scripts/check-android.ps1 통과. 정적 분석과 위젯 테스트 14개, Release APK 서명 및 버전 0.4.1+5를 확인했다.
+- 연결된 Android 기기가 없어 실제 계정의 재생목록 순서와 Fold8 런처 표시는 미검증이다. 다음 확인은 곡 이동 후 다른 기기에서 같은 목록을 다시 여는 것이다.
+
 ## Android 시험판 0.4.0
 
 `crates/replica-music-core` Rust 코드와 Flutter 내부 네트워크·재생 코드(`HttpClient`, `just_audio`, `ffi`)를 모두 제거했다. Flutter(`apps/replica/lib`)는 UI와 `MethodChannel` 브리지만 담당한다.

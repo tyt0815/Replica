@@ -100,7 +100,10 @@ class InnertubeSupplement(
         if (response.code !in 200..299) {
             throw IllegalStateException("YouTube API 오류 (${response.code})")
         }
-        return json.parseToJsonElement(text).jsonObject
+        val result = json.parseToJsonElement(text).jsonObject
+        val status = result["status"]?.jsonPrimitive?.content
+        check(status == null || status == "STATUS_SUCCEEDED") { "YouTube API 오류 ($status)" }
+        return result
     }
 
     suspend fun createEmptyPlaylist(

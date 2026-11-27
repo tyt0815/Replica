@@ -50,7 +50,7 @@ class ReplicaBackend(
     private val cookieProvider: () -> String,
     private val engineManager: DynamicEngineManager,
     private val playerEngineFactory: () -> DynamicEnginePlayer,
-    val coreVersion: String = "0.4.0",
+    val coreVersion: String = "0.4.1",
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val innertube = InnertubeSupplement(httpClient, cookieProvider)
@@ -230,13 +230,12 @@ class ReplicaBackend(
     private suspend fun fetchAllPlaylistItems(playlistId: String): List<YtFeedItem> {
         val out = mutableListOf<YtFeedItem>()
         var continuation: String? = null
-        var pages = 0
-        while (pages < 30) {
+        val seenContinuations = mutableSetOf<String>()
+        while (true) {
             val page = engineManager.extractPlaylistDetail(
                 url = "/playlist?list=$playlistId",
                 continuation = continuation,
             )
-            pages++
             for (section in page.sections) {
                 for (item in section.items) {
                     if (item.kind == YtFeedItem.KIND_VIDEO) {
@@ -246,6 +245,7 @@ class ReplicaBackend(
             }
             val next = page.continuation
             if (next.isNullOrBlank()) break
+            check(seenContinuations.add(next)) { "재생목록 페이지가 반복되었습니다." }
             continuation = next
         }
         return out
@@ -328,10 +328,10 @@ class ReplicaBackend(
     private suspend fun handleSyncPlaylistTracks(req: JsonObject): JsonObject {
         val playlistId = req["playlist_id"]?.jsonPrimitive?.content?.trim().orEmpty()
         val desiredIds = req["video_ids"]?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
-        val auth = req["auth"] as? JsonObject
+        val auth = (req["session"] ?: req["auth"]) as? JsonObject
 
         val current = fetchAllPlaylistItems(playlistId)
-        val currentMap = current.groupBy { it.id }.mapValues { it.value.toMutableList() }
+
         val desiredCounts = desiredIds.groupingBy { it }.eachCount().toMutableMap()
 
         val removeActions = mutableListOf<JsonObject>()
@@ -340,7 +340,7 @@ class ReplicaBackend(
             if (left > 0) {
                 desiredCounts[item.id] = left - 1
             } else {
-                val setId = extractSetVideoId(item.removeToken) ?: continue
+                val setId = requireNotNull(extractSetVideoId(item.removeToken))
                 removeActions.add(buildJsonObject {
                     put("action", "ACTION_REMOVE_VIDEO")
                     put("setVideoId", setId)
@@ -368,7 +368,38 @@ class ReplicaBackend(
             innertube.editPlaylistActions(playlistId, JsonArray(addActions), auth)
         }
 
-        return buildJsonObject { put("synced", true) }
+        var items = if (addActions.isEmpty() && removeActions.isEmpty()) current else fetchAllPlaylistItems(playlistId)
+        if (items.map { it.id } != desiredIds) {
+            val ordered = items.toMutableList()
+            check(ordered.size == desiredIds.size) { "원격 재생목록의 곡 수가 다릅니다." }
+            val moves = buildJsonArray {
+                for ((index, id) in desiredIds.withIndex()) {
+                    if (ordered[index].id == id) continue
+                    val source = (index + 1 until ordered.size).first { ordered[it].id == id }
+                    val moved = ordered.removeAt(source)
+                    ordered.add(index, moved)
+                    add(buildJsonObject {
+                        put("action", "ACTION_MOVE_VIDEO_AFTER")
+                        put("setVideoId", requireNotNull(extractSetVideoId(moved.removeToken)))
+                        if (index > 0) {
+                            put("movedSetVideoIdPredecessor", requireNotNull(extractSetVideoId(ordered[index - 1].removeToken)))
+                        }
+                    })
+                }
+            }
+            for (batch in moves.chunked(50)) {
+                innertube.editPlaylistActions(playlistId, JsonArray(batch), auth)
+            }
+            items = fetchAllPlaylistItems(playlistId)
+            check(items.map { it.id } == desiredIds) { "원격 재생목록의 곡 순서를 확인할 수 없습니다." }
+        }
+        req["new_remote_title"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let {
+            innertube.renamePlaylist(playlistId, it, auth)
+        }
+        return buildJsonObject {
+            put("synced", true)
+            put("tracks", JsonArray(items.map { trackJson(it) }))
+        }
     }
 
     private suspend fun handleRecordHistoryTrack(req: JsonObject): JsonObject {
