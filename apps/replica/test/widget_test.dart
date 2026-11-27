@@ -303,11 +303,16 @@ void main() {
   });
 
   testWidgets(
-    'Startup update check prompts user when newer GitHub release exists',
+    'App startup does not check updates and Settings manual check prompts when newer release exists',
     (tester) async {
-      await tester.pumpWidget(
-        ReplicaMusicApp(core: _FakeUpdateCore(), checkUpdatesOnStart: true),
-      );
+      await tester.pumpWidget(ReplicaMusicApp(core: _FakeUpdateCore()));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('update-available-dialog')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('dock-settings-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('업데이트 확인'));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('update-available-dialog')), findsOneWidget);
@@ -328,12 +333,13 @@ void main() {
       core.downloadCompleter = completer;
 
       await tester.pumpWidget(
-        ReplicaMusicApp(
-          core: core,
-          adapters: _FakeMediaAdapters(),
-          checkUpdatesOnStart: true,
-        ),
+        ReplicaMusicApp(core: core, adapters: _FakeMediaAdapters()),
       );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('dock-settings-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('업데이트 확인'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('update-confirm-button')));
@@ -368,9 +374,7 @@ void main() {
     'Library places add button in header and hides .rm suffix on creation',
     (tester) async {
       final core = NativeReplicaMusicCore.openOrFallback();
-      await tester.pumpWidget(
-        ReplicaMusicApp(core: core, checkUpdatesOnStart: false),
-      );
+      await tester.pumpWidget(ReplicaMusicApp(core: core));
       await tester.pumpAndSettle();
 
       expect(find.text('보관함'), findsWidgets);
@@ -412,9 +416,7 @@ void main() {
     'Bottom dock has Settings, Library, and Search tabs in order and supports swiping',
     (tester) async {
       final core = NativeReplicaMusicCore.openOrFallback();
-      await tester.pumpWidget(
-        ReplicaMusicApp(core: core, checkUpdatesOnStart: false),
-      );
+      await tester.pumpWidget(ReplicaMusicApp(core: core));
       await tester.pumpAndSettle();
 
       final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
@@ -566,7 +568,6 @@ void main() {
           adapters: adapters,
           audioEngine: _FakeAudioEngine(),
           fileExistsOverride: (_) => true,
-          checkUpdatesOnStart: false,
         ),
       );
       await tester.pumpAndSettle();
@@ -708,7 +709,6 @@ void main() {
           audioEngine: engine,
           audioServiceHandler: handler,
           fileExistsOverride: (_) => true,
-          checkUpdatesOnStart: false,
         ),
       );
       await tester.pumpAndSettle();
@@ -835,11 +835,7 @@ void main() {
     (tester) async {
       final adapters = _FakeMediaAdapters();
       await tester.pumpWidget(
-        ReplicaMusicApp(
-          core: _FakeUpdateCore(),
-          adapters: adapters,
-          checkUpdatesOnStart: false,
-        ),
+        ReplicaMusicApp(core: _FakeUpdateCore(), adapters: adapters),
       );
       await tester.pumpAndSettle();
 
@@ -885,7 +881,6 @@ void main() {
           audioEngine: engine,
           audioServiceHandler: handler,
           fileExistsOverride: (_) => true,
-          checkUpdatesOnStart: false,
         ),
       );
       await tester.pumpAndSettle();
@@ -1000,7 +995,6 @@ void main() {
         audioEngine: engine,
         audioServiceHandler: handler,
         fileExistsOverride: (_) => true,
-        checkUpdatesOnStart: false,
       ),
     );
     await tester.pumpAndSettle();
@@ -1061,7 +1055,6 @@ void main() {
               path.contains('track-1') ||
               path.contains('track-2') ||
               path.contains('new-track-1'),
-          checkUpdatesOnStart: false,
         ),
       );
       await tester.pumpAndSettle();
@@ -1178,7 +1171,6 @@ void main() {
           audioEngine: engine,
           fileExistsOverride: (path) =>
               path.endsWith('.opus') || path.endsWith('.m4a'),
-          checkUpdatesOnStart: false,
         ),
       );
       await tester.pumpAndSettle();

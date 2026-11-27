@@ -26,7 +26,6 @@ class ReplicaMusicApp extends StatefulWidget {
     this.audioEngine,
     this.audioServiceHandler,
     this.fileExistsOverride,
-    this.checkUpdatesOnStart = true,
   });
 
   final ReplicaMusicCoreBridge core;
@@ -34,7 +33,6 @@ class ReplicaMusicApp extends StatefulWidget {
   final AudioEngineBackend? audioEngine;
   final ReplicaAudioServiceHandler? audioServiceHandler;
   final bool Function(String path)? fileExistsOverride;
-  final bool checkUpdatesOnStart;
 
   @override
   State<ReplicaMusicApp> createState() => _ReplicaMusicAppState();
@@ -1450,7 +1448,6 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
       _refreshDownloadedTracks().then((_) => _runStorageCleanup()),
       if (session != null) _refreshAccountProfile(),
       if (session != null) _syncRemotePlaylists(silent: true),
-      if (widget.checkUpdatesOnStart) _checkForUpdates(silentIfUpToDate: true),
     ];
     await Future.wait(startupTasks);
   }
@@ -3951,22 +3948,15 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
       return;
     }
     setState(() => _isCheckingUpdate = true);
+    UpdateInfo? update;
     try {
       final data = await widget.core.invoke({
         'op': 'check_update',
         'current_version': _env.version,
       });
-      final update = UpdateInfo.fromJson(
+      update = UpdateInfo.fromJson(
         (data['update'] as Map<String, dynamic>?) ?? const {},
       );
-      if (!mounted) {
-        return;
-      }
-      if (update.updateAvailable && update.assetUrl != null) {
-        await _promptUpdateDialog(update);
-      } else if (!silentIfUpToDate) {
-        _showSnack('현재 최신 버전(v${update.currentVersion})을 사용 중입니다.');
-      }
     } catch (e) {
       if (!silentIfUpToDate) {
         _showSnack(
@@ -3977,6 +3967,14 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
       if (mounted) {
         setState(() => _isCheckingUpdate = false);
       }
+    }
+    if (!mounted || update == null) {
+      return;
+    }
+    if (update.updateAvailable && update.assetUrl != null) {
+      await _promptUpdateDialog(update);
+    } else if (!silentIfUpToDate) {
+      _showSnack('현재 최신 버전(v${update.currentVersion})을 사용 중입니다.');
     }
   }
 

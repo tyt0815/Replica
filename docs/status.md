@@ -5,7 +5,8 @@
 `ReplicaMusic`의 Rust 코어(`crates/replica-music-core`), Flutter UI(`apps/replica/lib`), Android 네이티브 어댑터(`MainActivity`, `AppUpdatePlugin`, `WebLoginActivity`, `AudioService`)와 리소스를 `Replica`(`io.replicamedia.replica`)로 이식했다.
 
 - 보관함, `.rm` 재생목록 동기화, YouTube 검색, 다운로드 우선 재생(`just_audio` + `audio_service` + `audio_session`), Now Playing 시트, 기기별 재생 기록, 테마 전환(시스템·라이트·다크), 오류 로그 내보내기, Fold8 4가지 화면 레이아웃을 포함한다.
-- 앱 업데이트 확인과 APK 다운로드 대상 저장소를 `tyt0815/Replica`와 `Replica-*-release.apk`로 연결했다.
+- 앱 업데이트 확인과 APK 다운로드 대상 저장소를 `tyt0815/Replica`와 `Replica-*-release.apk`로 연결했다. 앱 시작 시 자동 업데이트 확인은 제거하고 설정 화면의 수동 확인만 유지했다.
+- 앱 아이콘을 포인트 색상(`#FF0035`) 배경 위 새 심볼(흰색 둥근 사각형 + `#FF0035` 음표)로 교체했다.
 - `scripts/build-core.ps1`을 추가해 호스트와 Android(`arm64-v8a`, `x86_64`) Rust 네이티브 라이브러리를 빌드하고 `./scripts/check-android.ps1`에 통합했다.
 
 ## 확인한 동작
@@ -34,4 +35,4 @@
 
 Replica Music의 작업 지침, README, 환경·검증·빌드 스크립트와 게시된 v0.16.1을 대조했다. 해당 릴리스에는 한국어 변경 사항과 알려진 제약, APK, SHA256SUMS.txt가 있다. 추적된 저장소에 자동 게시 워크플로는 없다. Replica는 기존 빌드 스크립트의 APK별 `.sha256` 이름을 사용한다. [참고 릴리스](https://github.com/tyt0815/ReplicaMusic/releases/tag/v0.16.1)
 
-Replica 0.1.0은 디버그 키로 서명한 로컬 시험판이다. 0.2.0부터 전용 배포 인증서를 사용한다. 공개 저장소의 최신 릴리스를 앱 시작과 설정 화면에서 확인한다. APK 크기와 GitHub가 제공한 SHA-256을 대조한 뒤 시스템 설치 화면을 연다. 배포 시 [릴리스 작업](../AGENTS.md#릴리스-작업)을 따른다.
+Replica 0.1.0은 디버그 키로 서명한 로컬 시험판이다. 0.2.0부터 전용 배포 인증서를 사용한다. 공개 저장소의 최신 릴리스를 설정 화면에서 확인한다. APK 크기와 GitHub가 제공한 SHA-256을 대조한 뒤 시스템 설치 화면을 연다. 배포 시 [릴리스 작업](../AGENTS.md#릴리스-작업)을 따른다.
