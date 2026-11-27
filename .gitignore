@@ -3,3 +3,10 @@
 /dist/
 *.keystore
 *.jks
+*.apk
+*.aab
+*.p12
+key.properties
+.env
+.env.*
+!.env.example

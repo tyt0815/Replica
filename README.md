@@ -42,5 +42,6 @@ Windows에서는 저장소 루트에서 `./scripts/check-android.ps1`을 실행�
 - 영상 화면도 Flutter로 구현합니다. Android에서 먼저 검증하고 Windows 지원 범위는 기능별로 확장합니다.
 - YMusic 원본은 `vendor/YMusicV4`에 둡니다. Replica UI와 플랫폼 연결 코드는 상위 저장소에서 관리합니다. 빌드에는 대상 플랫폼에 필요한 모듈과 의존성만 포함하는 것이 목표입니다.
 - 엔진 OTA는 설치된 앱이 호환되는 JS 번들을 받는 기능입니다. 공식 채널 연동과 실패 시 내장 번들 복구는 기기에서 검증해야 합니다.
+- 앱 자체의 업데이트는 GitHub Releases를 사용할 계획입니다. 앱 시작 시와 설정 화면에서 새 버전을 확인하고 사용자가 다운로드와 설치를 선택하는 흐름입니다. 현재 시험판은 APK를 직접 설치합니다. 버전 태그, 첨부 파일, 게시 후 검증 절차는 [릴리스 작업](AGENTS.md#릴리스-작업)에 정리했습니다.
 
 [작업 지침](AGENTS.md) · [개발 상태](docs/status.md) · [YMusicV4](https://github.com/ymusic-io/YMusicV4) · [라이선스](LICENSE)

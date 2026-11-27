@@ -26,13 +26,28 @@ try {
     Invoke-Checked flutter @('test')
     Invoke-Checked flutter @('build', 'apk', "--$Mode", '--target-platform', 'android-arm64,android-x64')
 
-    $versionLine = Select-String '^version:\s*(\d+\.\d+\.\d+)\+\d+\s*$' pubspec.yaml
+    $versionLine = Select-String '^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$' pubspec.yaml
     if (!$versionLine) { throw 'Expected version MAJOR.MINOR.PATCH+BUILD in pubspec.yaml' }
     $version = $versionLine.Matches[0].Groups[1].Value
+    $buildNumber = $versionLine.Matches[0].Groups[2].Value
+    $apk = "build/app/outputs/flutter-apk/app-$Mode.apk"
+    $sdkLine = Select-String '^sdk\.dir=(.+)$' android/local.properties
+    $sdk = $sdkLine.Matches[0].Groups[1].Value.Replace('\\', '\').Replace('\:', ':')
+    $aapt = Get-ChildItem "$sdk/build-tools/*/aapt.exe" |
+        Where-Object { $_.Directory.Name -match '^\d+\.\d+\.\d+$' } |
+        Sort-Object { [version]$_.Directory.Name } -Descending | Select-Object -First 1
+    if (!$aapt) { throw 'Android SDK Build Tools (aapt.exe) missing' }
+    $badging = & $aapt.FullName dump badging $apk
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect APK' }
+    $identity = $badging | Where-Object { $_ -like 'package:*' } | Select-Object -First 1
+    if (!$identity -or !$identity.Contains("name='io.replicamedia.replica'") -or
+        !$identity.Contains("versionName='$version'") -or !$identity.Contains("versionCode='$buildNumber'")) {
+        throw "Unexpected APK identity: $identity"
+    }
     $dest = Join-Path $root 'dist'
     New-Item -ItemType Directory -Path $dest -Force | Out-Null
     $name = "Replica-$version-$Mode.apk"
-    Copy-Item -LiteralPath "build/app/outputs/flutter-apk/app-$Mode.apk" -Destination "$dest/$name"
+    Copy-Item -LiteralPath $apk -Destination "$dest/$name"
     $hash = (Get-FileHash "$dest/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath "$dest/$name.sha256" -Value "$hash  $name" -Encoding Ascii
     Write-Output "$dest/$name"
