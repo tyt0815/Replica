@@ -1,5 +1,11 @@
 # 개발 상태
 
+## 0.4.1 배포 결과
+
+- 최신 [GitHub Release](https://github.com/tyt0815/Replica/releases/tag/v0.4.1) 게시 완료. 태그 커밋은 79bce59다.
+- Replica-0.4.1-release.apk와 해당 .sha256 파일을 게시했다. 게시 전후 내려받은 APK의 SHA-256은 8d67290b7e594261617dd39b65adea78e32977e2302eea7b8be883a82852504a로 일치했다.
+- 읽기 전용 Android 에뮬레이터에서 배포 APK 0.4.0 설치 후 0.4.1 덮어쓰기에 성공했다. 패키지 버전과 업데이트 후 앱 시작을 확인했다. Fold8 실기기와 실제 계정의 재생목록 동기화는 미검증이다.
+
 ## Android 0.4.1 수정
 
 - 재생목록 편집 시 YouTube 항목 ID로 곡을 이동한다. 원격 순서를 확인한 뒤 버전이 포함된 목록 이름을 반영한다.
