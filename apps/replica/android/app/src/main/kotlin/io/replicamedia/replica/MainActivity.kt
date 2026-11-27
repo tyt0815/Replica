@@ -13,16 +13,38 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.webkit.WebView
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import org.json.JSONObject
+import io.replicamedia.replica.backend.ReplicaBackend
+import io.ymusic.dynamicengine.DynamicEngineManager
+import io.ymusic.dynamicengine.androidEngineCacheStore
+import io.ymusic.dynamicengine.embeddedEngineJsSource
+import io.ymusic.dynamicengine.player.DynamicEnginePlayer
+import io.ymusic.dynamicengine.yt.ytRefreshSession
+import kmphttp.KmpHttpClient
+import kmphttp.create
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import java.io.File
 import java.lang.reflect.Method
+import java.util.concurrent.Executors
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.seconds
 
 class MainActivity : AudioServiceActivity() {
-    private var parser: WebView? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val backendScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val playerJsExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "replica-player-js").apply { isDaemon = true }
+    }
+
+    private var backendChannel: MethodChannel? = null
+    private var playerBridge: YMusicPlayerBridge? = null
     private var updatePlugin: AppUpdatePlugin? = null
     private var accountChannel: MethodChannel? = null
     private var volumeChannel: MethodChannel? = null
@@ -34,28 +56,94 @@ class MainActivity : AudioServiceActivity() {
     private var pendingLoginResult: MethodChannel.Result? = null
     private var notificationPermissionRequested = false
 
+    private lateinit var cookieJar: WebViewCookieJar
+    private lateinit var engineManager: DynamicEngineManager
+    private lateinit var backend: ReplicaBackend
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
-        val bundle by lazy { assets.open("search.js").bufferedReader().use { it.readText() } }
-        MethodChannel(messenger, "replica/search").setMethodCallHandler { call, result ->
-            if (call.method != "parse") {
-                result.notImplemented()
-            } else {
-                val runtime = parser ?: WebView(this).also {
-                    it.settings.javaScriptEnabled = true
-                    it.settings.blockNetworkLoads = true
-                    parser = it
-                }
-                val payload = JSONObject.quote(call.arguments as String)
-                runtime.evaluateJavascript(bundle + "\nReplicaSearch.videos(JSON.parse(" + payload + "))") {
-                    if (it == null || it == "null") result.error("parse", "검색 결과를 읽을 수 없습니다.", null)
-                    else result.success(it)
+        cookieJar = WebViewCookieJar()
+        val httpClient = KmpHttpClient.create {
+            cookieJar = this@MainActivity.cookieJar
+            defaultExecuteTimeout = 30.seconds
+        }
+        val cacheStore = androidEngineCacheStore(applicationContext)
+        engineManager = DynamicEngineManager(
+            client = httpClient,
+            appVersion = BuildConfig.VERSION_CODE,
+            jsSource = embeddedEngineJsSource(),
+            cacheStore = cacheStore,
+            cookieJar = cookieJar,
+        )
+        backendScope.launch {
+            runCatching { engineManager.start() }
+        }
+        backend = ReplicaBackend(
+            httpClient = httpClient,
+            cookieProvider = { cookieJar.youtubeCookieHeader() },
+            engineManager = engineManager,
+            playerEngineFactory = {
+                DynamicEnginePlayer.create(
+                    client = httpClient,
+                    appVersion = BuildConfig.VERSION_CODE,
+                    dispatcher = playerJsExecutor.asCoroutineDispatcher(),
+                    cacheStore = cacheStore,
+                    cookieJar = cookieJar,
+                    videoSurface = null,
+                    main = engineManager,
+                )
+            },
+            coreVersion = BuildConfig.VERSION_NAME,
+        )
+
+        backendChannel = MethodChannel(messenger, "io.replicamedia.replica/backend").also { ch ->
+            ch.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "invoke" -> {
+                        val requestJson = call.argument<String>("request").orEmpty()
+                        backendScope.launch {
+                            val responseJson = backend.invoke(requestJson)
+                            mainHandler.post { result.success(responseJson) }
+                        }
+                    }
+                    "updateProgress" -> {
+                        val (done, total) = backend.readUpdateDownloadProgress()
+                        result.success(mapOf("downloaded_bytes" to done, "total_bytes" to total))
+                    }
+                    "trackProgress" -> {
+                        val map = backend.readTrackDownloadProgress().mapValues { (_, pair) ->
+                            mapOf("downloaded_bytes" to pair.first, "total_bytes" to pair.second)
+                        }
+                        result.success(map)
+                    }
+                    "cancelUpdate" -> {
+                        backend.cancelUpdateDownload()
+                        result.success(true)
+                    }
+                    "cancelTrack" -> {
+                        val videoId = call.argument<String>("video_id").orEmpty()
+                        backend.cancelTrackDownload(videoId)
+                        result.success(true)
+                    }
+                    "fetchThumbnail" -> {
+                        val url = call.argument<String>("url").orEmpty()
+                        val cacheDir = call.argument<String>("cache_dir")
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let(::File)
+                            ?: applicationContext.cacheDir
+                        backendScope.launch {
+                            val path = runCatching { backend.fetchThumbnail(url, cacheDir) }.getOrNull()
+                            mainHandler.post { result.success(path) }
+                        }
+                    }
+                    else -> result.notImplemented()
                 }
             }
         }
 
+        playerBridge = YMusicPlayerBridge(applicationContext).also { it.attach(messenger) }
         updatePlugin = AppUpdatePlugin(applicationContext).also { it.attach(messenger) }
         ensureNotificationPermission()
 
@@ -65,6 +153,7 @@ class MainActivity : AudioServiceActivity() {
                     "session" -> result.success(WebLoginActivity.readSession(applicationContext))
                     "logout" -> {
                         WebLoginActivity.clearSession(applicationContext)
+                        backendScope.launch { runCatching { engineManager.ytRefreshSession() } }
                         result.success(true)
                     }
                     "login" -> {
@@ -101,7 +190,6 @@ class MainActivity : AudioServiceActivity() {
             }
         }
 
-        val mainHandler = Handler(Looper.getMainLooper())
         val emitIfChanged = {
             val current = readMediaVolumeRatio(audioManager)
             if (kotlin.math.abs(current - lastReportedVolume) > 0.0005) {
@@ -204,6 +292,7 @@ class MainActivity : AudioServiceActivity() {
             val callback = pendingLoginResult
             pendingLoginResult = null
             if (resultCode == Activity.RESULT_OK) {
+                backendScope.launch { runCatching { engineManager.ytRefreshSession() } }
                 callback?.success(WebLoginActivity.readSession(applicationContext))
             } else {
                 callback?.success(null)
@@ -224,6 +313,10 @@ class MainActivity : AudioServiceActivity() {
         volumeObserver = null
         volumeChannel?.setMethodCallHandler(null)
         volumeChannel = null
+        backendChannel?.setMethodCallHandler(null)
+        backendChannel = null
+        playerBridge?.detach()
+        playerBridge = null
         updatePlugin?.detach()
         updatePlugin = null
         accountChannel?.setMethodCallHandler(null)
@@ -232,7 +325,8 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
-        parser?.destroy()
+        backendScope.cancel()
+        playerJsExecutor.shutdown()
         super.onDestroy()
     }
 

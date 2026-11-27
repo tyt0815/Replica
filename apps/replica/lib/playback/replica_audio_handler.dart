@@ -5,7 +5,7 @@ import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:flutter/services.dart';
 
 import '../models/library_models.dart';
 import '../ui/now_playing_sheet.dart';
@@ -28,27 +28,34 @@ abstract class AudioEngineBackend {
   Future<void> dispose();
 }
 
-class JustAudioEngineBackend implements AudioEngineBackend {
-  final AudioPlayer _player = AudioPlayer();
+class YMusicPlayerBackend implements AudioEngineBackend {
+  static const _channel = MethodChannel('io.replicamedia.replica/player');
+
+  final StreamController<bool> _playingController =
+      StreamController<bool>.broadcast();
+  final StreamController<Duration> _positionController =
+      StreamController<Duration>.broadcast();
+  final StreamController<Duration?> _durationController =
+      StreamController<Duration?>.broadcast();
   final StreamController<void> _completedController =
       StreamController<void>.broadcast();
   final StreamController<Object> _errorController =
       StreamController<Object>.broadcast();
-  StreamSubscription<PlayerState>? _playerStateSub;
-  StreamSubscription<PlaybackEvent>? _eventSub;
+
   StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
   StreamSubscription<void>? _becomingNoisySub;
   bool _initialized = false;
+  bool _playing = false;
   bool _resumeAfterInterruption = false;
 
   @override
-  Stream<bool> get playingStream => _player.playingStream;
+  Stream<bool> get playingStream => _playingController.stream;
 
   @override
-  Stream<Duration> get positionStream => _player.positionStream;
+  Stream<Duration> get positionStream => _positionController.stream;
 
   @override
-  Stream<Duration?> get durationStream => _player.durationStream;
+  Stream<Duration?> get durationStream => _durationController.stream;
 
   @override
   Stream<void> get completedStream => _completedController.stream;
@@ -62,6 +69,36 @@ class JustAudioEngineBackend implements AudioEngineBackend {
       return;
     }
     _initialized = true;
+    _channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'playing':
+          final value = call.arguments == true;
+          _playing = value;
+          _playingController.add(value);
+          break;
+        case 'position':
+          final ms = (call.arguments as num?)?.toInt() ?? 0;
+          _positionController.add(Duration(milliseconds: ms));
+          break;
+        case 'duration':
+          final ms = (call.arguments as num?)?.toInt() ?? 0;
+          if (ms > 0) {
+            _durationController.add(Duration(milliseconds: ms));
+          }
+          break;
+        case 'completed':
+          _completedController.add(null);
+          break;
+        case 'error':
+          _errorController.add(
+            Exception(call.arguments?.toString() ?? '재생 오류'),
+          );
+          break;
+      }
+    });
+    try {
+      await _channel.invokeMethod<bool>('init');
+    } catch (_) {}
     try {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
@@ -69,25 +106,23 @@ class JustAudioEngineBackend implements AudioEngineBackend {
         if (event.begin) {
           switch (event.type) {
             case AudioInterruptionType.duck:
-              unawaited(_player.setVolume(0.25));
               break;
             case AudioInterruptionType.pause:
             case AudioInterruptionType.unknown:
-              if (_player.playing) {
+              if (_playing) {
                 _resumeAfterInterruption = true;
-                unawaited(_player.pause());
+                unawaited(pause());
               }
               break;
           }
         } else {
           switch (event.type) {
             case AudioInterruptionType.duck:
-              unawaited(_player.setVolume(1.0));
               break;
             case AudioInterruptionType.pause:
               if (_resumeAfterInterruption) {
                 _resumeAfterInterruption = false;
-                unawaited(_player.play());
+                unawaited(play());
               }
               break;
             case AudioInterruptionType.unknown:
@@ -98,29 +133,21 @@ class JustAudioEngineBackend implements AudioEngineBackend {
       });
       _becomingNoisySub = session.becomingNoisyEventStream.listen((_) {
         _resumeAfterInterruption = false;
-        if (_player.playing) {
-          unawaited(_player.pause());
+        if (_playing) {
+          unawaited(pause());
         }
       });
     } catch (_) {}
-
-    _playerStateSub = _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        _completedController.add(null);
-      }
-    });
-    _eventSub = _player.playbackEventStream.listen(
-      (_) {},
-      onError: (Object error, StackTrace _) {
-        _errorController.add(error);
-      },
-    );
   }
 
   @override
   Future<Duration?> loadFile(String path, {Duration? initialPosition}) async {
     await initialize();
-    return _player.setFilePath(path, initialPosition: initialPosition);
+    await _channel.invokeMethod<void>('loadFile', {
+      'path': path,
+      'initialPositionMs': initialPosition?.inMilliseconds ?? 0,
+    });
+    return null;
   }
 
   @override
@@ -130,39 +157,38 @@ class JustAudioEngineBackend implements AudioEngineBackend {
       final session = await AudioSession.instance;
       await session.setActive(true);
     } catch (_) {}
-    unawaited(
-      _player.play().catchError((Object error) {
-        _errorController.add(error);
-      }),
-    );
+    await _channel.invokeMethod<bool>('play');
   }
 
   @override
   Future<void> pause() async {
     _resumeAfterInterruption = false;
-    await _player.pause();
+    await _channel.invokeMethod<bool>('pause');
   }
 
   @override
   Future<void> seek(Duration position) async {
-    await _player.seek(position);
+    await _channel.invokeMethod<bool>('seek', {
+      'positionMs': position.inMilliseconds,
+    });
   }
 
   @override
   Future<void> stop() async {
     _resumeAfterInterruption = false;
-    await _player.stop();
+    await _channel.invokeMethod<bool>('stop');
   }
 
   @override
   Future<void> dispose() async {
-    await _playerStateSub?.cancel();
-    await _eventSub?.cancel();
+    _channel.setMethodCallHandler(null);
     await _interruptionSub?.cancel();
     await _becomingNoisySub?.cancel();
+    await _playingController.close();
+    await _positionController.close();
+    await _durationController.close();
     await _completedController.close();
     await _errorController.close();
-    await _player.dispose();
   }
 }
 
@@ -322,7 +348,7 @@ class ReplicaPlaybackController {
 
   static AudioEngineBackend _defaultEngine() {
     if (Platform.isAndroid) {
-      return JustAudioEngineBackend();
+      return YMusicPlayerBackend();
     }
     return NoopAudioEngineBackend();
   }

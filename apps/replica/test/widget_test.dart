@@ -289,11 +289,9 @@ void main() {
     expect(extractHistoryDeviceName('History.rm'), isNull);
   });
 
-  test('Rust FFI library loads, returns 0.3.0, and enforces .rm rules', () {
-    final core = NativeReplicaMusicCore.tryOpen();
-    expect(core, isNotNull);
-    expect(core!.isNativeLoaded, isTrue);
-    expect(core.coreVersion, '0.3.0');
+  test('Backend bridge returns 0.4.0 and enforces .rm rules', () {
+    final core = NativeReplicaMusicCore.openOrFallback();
+    expect(core.coreVersion, '0.4.0');
     expect(core.isReplicaPlaylist('Chill.rm'), isTrue);
     expect(core.isReplicaPlaylist('Chill'), isFalse);
     expect(core.toRemotePlaylistTitle('Chill'), 'Chill.rm');

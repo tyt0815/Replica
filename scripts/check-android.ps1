@@ -9,16 +9,24 @@ if ($toolDir -and !(Get-Command flutter -ErrorAction SilentlyContinue)) {
     $env:PATH = "$toolDir/flutter/bin;$env:PATH"
     $env:JAVA_HOME = "$toolDir/jdk-21"
     $env:ANDROID_HOME = "$toolDir/android-sdk"
+    $env:ANDROID_NDK_ROOT = "$toolDir/android-sdk/ndk/28.2.13676358"
     $env:GRADLE_USER_HOME = "$toolDir/gradle"
     $env:PUB_CACHE = "$toolDir/pub-cache"
+    if (Test-Path "$toolDir/mingw64/bin") { $env:MINGW_HOME = "$toolDir/mingw64" }
 }
+if (!(Get-Command cmake -ErrorAction SilentlyContinue)) {
+    $cmakeDir = @(
+        "$env:ANDROID_HOME/cmake/*/bin",
+        "$env:LOCALAPPDATA/Android/Sdk/cmake/*/bin"
+    ) | ForEach-Object { Get-Item $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+    if ($cmakeDir) { $env:PATH = "$($cmakeDir.FullName);$env:PATH" }
+}
+$env:CMAKE_GENERATOR = 'Ninja'
 
 function Invoke-Checked($command, [string[]]$arguments) {
     & $command @arguments
     if ($LASTEXITCODE -ne 0) { throw "$command $arguments failed ($LASTEXITCODE)" }
 }
-
-& "$PSScriptRoot/build-core.ps1" -Platform all
 
 Push-Location "$root/apps/replica"
 try {

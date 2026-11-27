@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class CoverPalette {
   const CoverPalette({
@@ -50,7 +50,9 @@ class ThumbnailCache {
   static const int _maxConcurrentDownloads = 6;
   static const int _maxDiskCacheBytes = 60 * 1024 * 1024;
   static const int _maxDiskCacheFiles = 400;
-  static const int _maxSingleImageBytes = 6 * 1024 * 1024;
+  static const MethodChannel _backendChannel = MethodChannel(
+    'io.replicamedia.replica/backend',
+  );
 
   String _cacheDir = '';
   String _storageDir = '';
@@ -59,20 +61,12 @@ class ThumbnailCache {
   bool _diskIndexReady = false;
   final Map<String, Future<File?>> _inFlight = {};
   final Map<String, CoverPalette> _paletteCache = {};
-  HttpClient? _sharedHttpClient;
   int _activeDownloads = 0;
   final List<Completer<void>> _downloadWaiters = [];
   bool _pruningDiskCache = false;
   int _writesSincePrune = 0;
 
   bool get isConfigured => _cacheDir.isNotEmpty;
-
-  HttpClient _httpClient() {
-    return _sharedHttpClient ??= (HttpClient()
-      ..connectionTimeout = const Duration(seconds: 6)
-      ..idleTimeout = const Duration(seconds: 30)
-      ..maxConnectionsPerHost = _maxConcurrentDownloads);
-  }
 
   void _rememberFile(String key, File file) {
     _memoryIndex.remove(key);
@@ -478,46 +472,22 @@ class ThumbnailCache {
     required bool highRes,
   }) async {
     await _acquireDownloadSlot();
-    final client = _httpClient();
     try {
       await target.parent.create(recursive: true);
       for (final candidate in candidates) {
         try {
-          final req = await client.getUrl(Uri.parse(candidate));
-          req.headers.set(HttpHeaders.userAgentHeader, 'Mozilla/5.0');
-          final resp = await req.close().timeout(const Duration(seconds: 8));
-          if (resp.statusCode != HttpStatus.ok) {
-            await resp.drain<void>();
-            continue;
-          }
-          final builder = BytesBuilder(copy: false);
-          var oversized = false;
-          await for (final chunk in resp.timeout(const Duration(seconds: 8))) {
-            builder.add(chunk);
-            if (builder.length > _maxSingleImageBytes) {
-              oversized = true;
-              break;
-            }
-          }
-          if (oversized) {
-            continue;
-          }
-          final bytes = builder.takeBytes();
-          if (bytes.length < 1500) {
-            continue;
-          }
-          final tmp = File(
-            '${target.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+          final fetchedPath = await _backendChannel.invokeMethod<String>(
+            'fetchThumbnail',
+            {'url': candidate, 'cache_dir': _cacheDir},
           );
-          await tmp.writeAsBytes(bytes, flush: true);
-          try {
-            await tmp.rename(target.path);
-          } catch (_) {
-            if (target.existsSync()) {
-              await target.delete();
-            }
-            await tmp.rename(target.path);
+          if (fetchedPath == null || fetchedPath.isEmpty) {
+            continue;
           }
+          final fetched = File(fetchedPath);
+          if (!fetched.existsSync() || fetched.lengthSync() < 1500) {
+            continue;
+          }
+          await fetched.copy(target.path);
           _knownDiskPaths.add(target.path);
           _rememberFile(key, target);
           _writesSincePrune += 1;

@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -18,6 +17,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -44,6 +44,19 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("distribution")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }
@@ -54,21 +67,17 @@ kotlin {
     }
 }
 
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    implementation(project(":replica-backend"))
+    implementation("io.ymusic:dynamic-engine")
+    implementation("io.ymusic:player")
+    implementation("androidx.media3:media3-exoplayer:1.9.2")
+    implementation("io.ymusic:quickjs")
+    implementation("io.ymusic:kmp-http-core")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+}
+
 flutter {
     source = "../.."
 }
-
-val searchAssets = layout.buildDirectory.dir("generated/ymusic/assets")
-val bundleSearch by tasks.registering(Exec::class) {
-    val appRoot = rootDir.parentFile
-    inputs.file(appRoot.resolve("engine/search.ts"))
-    inputs.dir(appRoot.resolve("../../vendor/YMusicV4/engine-js/src"))
-    outputs.dir(searchAssets)
-    workingDir(appRoot)
-    val args = listOf("npx", "--yes", "esbuild@0.25.12", "engine/search.ts", "--bundle",
-        "--global-name=ReplicaSearch", "--define:versions.app=1",
-        "--outfile=" + searchAssets.get().file("search.js").asFile.absolutePath)
-    commandLine(if (System.getProperty("os.name").startsWith("Windows")) listOf("cmd", "/c") + args else args)
-}
-android.sourceSets["main"].assets.srcDir(searchAssets.get().asFile)
-tasks.named("preBuild").configure { dependsOn(bundleSearch) }
