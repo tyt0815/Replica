@@ -23,6 +23,27 @@ if (!(Get-Command cmake -ErrorAction SilentlyContinue)) {
 }
 $env:CMAKE_GENERATOR = 'Ninja'
 
+$ffmpegTargets = @(
+    @('arm64-v8a', 'ffmpeg-android-arm64-v8a.so', '6ebf95cf17e81da68a2afad1703712a3b84eb0a8d893ed7478145c9b0df09000'),
+    @('x86_64', 'ffmpeg-android-x86_64.so', 'd2e949b18cbf25c58f5739d9b5b55a33b0916e2f5b3954751e4b9cc9a10676d3')
+)
+foreach ($t in $ffmpegTargets) {
+    $abi = $t[0]; $asset = $t[1]; $expectedHash = $t[2]
+    $destDir = Join-Path $root "apps/replica/android/app/src/main/jniLibs/$abi"
+    $destFile = Join-Path $destDir 'libffmpeg.so'
+    if (!(Test-Path -LiteralPath $destFile) -or
+        (Get-FileHash $destFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) {
+        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        $url = "https://github.com/ymusic-io/ffmpeg-build/releases/download/n9.1-dev-18-g90cca8111b/$asset"
+        Invoke-WebRequest -Uri $url -OutFile $destFile
+        $actualHash = (Get-FileHash $destFile -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actualHash -ne $expectedHash) {
+            Remove-Item -LiteralPath $destFile -Force
+            throw "SHA-256 mismatch for $asset ($actualHash)"
+        }
+    }
+}
+
 function Invoke-Checked($command, [string[]]$arguments) {
     & $command @arguments
     if ($LASTEXITCODE -ne 0) { throw "$command $arguments failed ($LASTEXITCODE)" }

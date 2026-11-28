@@ -1,5 +1,6 @@
 package io.replicamedia.replica.backend
 
+import io.ymusic.download.Ffmpeg
 import io.ymusic.download.SabrSpecBuilder
 import io.ymusic.dynamicengine.DynamicEngineManager
 import io.ymusic.dynamicengine.player.DynamicEnginePlayer
@@ -50,8 +51,10 @@ class ReplicaBackend(
     private val cookieProvider: () -> String,
     private val engineManager: DynamicEngineManager,
     private val playerEngineFactory: () -> DynamicEnginePlayer,
+    private val ffmpegBinaryPath: String? = null,
     val coreVersion: String = "0.5.1",
 ) {
+    private val ffmpeg: Ffmpeg? = ffmpegBinaryPath?.takeIf { it.isNotBlank() }?.let(::Ffmpeg)
     private val json = Json { ignoreUnknownKeys = true }
     private val innertube = InnertubeSupplement(httpClient, cookieProvider)
     private val updateAndLogs = UpdateAndLogs(httpClient)
@@ -126,7 +129,7 @@ class ReplicaBackend(
         return try {
             val req = json.parseToJsonElement(requestJson).jsonObject
             val op = req["op"]?.jsonPrimitive?.content
-                ?: return errorJson("요청에 op 필드가 없습니다.")
+                ?: return errorJson("?붿껌??op ?꾨뱶媛 ?놁뒿?덈떎.")
             val data = dispatch(op, req)
             buildJsonObject {
                 put("ok", true)
@@ -166,7 +169,7 @@ class ReplicaBackend(
         "enqueue_error_report" -> handleEnqueueErrorReport(req)
         "list_error_reports" -> handleListErrorReports(req)
         "clear_error_reports" -> handleClearErrorReports(req)
-        else -> throw IllegalArgumentException("지원하지 않는 요청입니다: $op")
+        else -> throw IllegalArgumentException("吏?먰븯吏 ?딅뒗 ?붿껌?낅땲?? $op")
     }
 
     private suspend fun handleSearch(req: JsonObject): JsonObject {
@@ -221,7 +224,7 @@ class ReplicaBackend(
             }
             val next = page.continuation
             if (next.isNullOrBlank()) break
-            check(seenPages.add(next)) { "보관함 페이지가 반복되었습니다." }
+            check(seenPages.add(next)) { "蹂닿????섏씠吏媛 諛섎났?섏뿀?듬땲??" }
             continuation = next
         }
         return buildJsonObject { put("playlists", JsonArray(playlists)) }
@@ -245,7 +248,7 @@ class ReplicaBackend(
             }
             val next = page.continuation
             if (next.isNullOrBlank()) break
-            check(seenContinuations.add(next)) { "재생목록 페이지가 반복되었습니다." }
+            check(seenContinuations.add(next)) { "?ъ깮紐⑸줉 ?섏씠吏媛 諛섎났?섏뿀?듬땲??" }
             continuation = next
         }
         return out
@@ -253,7 +256,7 @@ class ReplicaBackend(
 
     private suspend fun handlePlaylistTracks(req: JsonObject): JsonObject {
         val playlistId = req["playlist_id"]?.jsonPrimitive?.content?.trim().orEmpty()
-        if (playlistId.isEmpty()) throw IllegalArgumentException("playlist_id가 필요합니다.")
+        if (playlistId.isEmpty()) throw IllegalArgumentException("playlist_id媛 ?꾩슂?⑸땲??")
         val items = fetchAllPlaylistItems(playlistId)
         val tracks = buildJsonArray {
             for (item in items) {
@@ -268,7 +271,7 @@ class ReplicaBackend(
         val remoteTitle = if (PlaylistRules.isReplicaPlaylist(rawTitle)) {
             rawTitle
         } else {
-            PlaylistRules.toRemoteTitle(rawTitle) ?: throw IllegalArgumentException("재생목록 이름이 비어 있습니다.")
+            PlaylistRules.toRemoteTitle(rawTitle) ?: throw IllegalArgumentException("?ъ깮紐⑸줉 ?대쫫??鍮꾩뼱 ?덉뒿?덈떎.")
         }
         val description = req["description"]?.jsonPrimitive?.content
         val videoIds = req["video_ids"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content.takeIf { s -> s.isNotBlank() } }.orEmpty()
@@ -320,7 +323,7 @@ class ReplicaBackend(
             PlaylistRules.removeToken(playlistId, setVideoId)
         } else {
             fetchAllPlaylistItems(playlistId).firstOrNull { it.id == videoId }?.removeToken
-                ?: throw IllegalStateException("삭제할 곡의 토큰을 찾지 못했습니다.")
+                ?: throw IllegalStateException("??젣??怨≪쓽 ?좏겙??李얠? 紐삵뻽?듬땲??")
         }
         engineManager.removeFromPlaylist(token)
         return buildJsonObject { put("removed", true) }
@@ -380,7 +383,7 @@ class ReplicaBackend(
         var items = if (addActions.isEmpty() && removeActions.isEmpty()) current else fetchAllPlaylistItems(playlistId)
         if (items.map { it.id } != desiredIds) {
             val ordered = items.toMutableList()
-            check(ordered.size == desiredIds.size) { "원격 재생목록의 곡 수가 다릅니다." }
+            check(ordered.size == desiredIds.size) { "?먭꺽 ?ъ깮紐⑸줉??怨??섍? ?ㅻ쫭?덈떎." }
             val moves = buildJsonArray {
                 for ((index, id) in desiredIds.withIndex()) {
                     if (ordered[index].id == id) continue
@@ -400,7 +403,7 @@ class ReplicaBackend(
                 innertube.editPlaylistActions(playlistId, JsonArray(batch), auth)
             }
             items = fetchAllPlaylistItems(playlistId)
-            check(items.map { it.id } == desiredIds) { "원격 재생목록의 곡 순서를 확인할 수 없습니다." }
+            check(items.map { it.id } == desiredIds) { "?먭꺽 ?ъ깮紐⑸줉??怨??쒖꽌瑜??뺤씤?????놁뒿?덈떎." }
         }
         newTitle?.takeIf { it.isNotBlank() }?.let {
             innertube.renamePlaylist(playlistId, it, auth)
@@ -430,7 +433,7 @@ class ReplicaBackend(
 
     private suspend fun handleDownloadTrack(req: JsonObject): JsonObject {
         val storageDir = File(req["storage_dir"]?.jsonPrimitive?.content?.trim().orEmpty())
-        val trackObj = req["track"]?.jsonObject ?: throw IllegalArgumentException("track 정보가 없습니다.")
+        val trackObj = req["track"]?.jsonObject ?: throw IllegalArgumentException("track ?뺣낫媛 ?놁뒿?덈떎.")
         val videoId = trackObj["video_id"]?.jsonPrimitive?.content?.trim().orEmpty()
         val title = trackObj["title"]?.jsonPrimitive?.content?.trim().orEmpty().ifEmpty { videoId }
         val artist = trackObj["artist"]?.jsonPrimitive?.content?.trim().orEmpty()
@@ -438,7 +441,7 @@ class ReplicaBackend(
         val thumbnail = trackObj["thumbnail"]?.jsonPrimitive?.content?.trim().orEmpty()
         val preferredFormat = (req["format"] ?: req["preferred_format"])?.jsonPrimitive?.content?.lowercase() ?: "opus"
 
-        if (videoId.isEmpty()) throw IllegalArgumentException("video_id가 비어 있습니다.")
+        if (videoId.isEmpty()) throw IllegalArgumentException("video_id媛 鍮꾩뼱 ?덉뒿?덈떎.")
         storageDir.mkdirs()
         val metaDir = File(storageDir, ".meta").apply { mkdirs() }
         File(storageDir, ".nomedia").apply { if (!exists()) createNewFile() }
@@ -458,9 +461,15 @@ class ReplicaBackend(
 
             val audioFormats = resolved.spec.formats.filter { it.mimeType.startsWith("audio/") }
             val chosen = selectAudioFormat(audioFormats, preferredFormat)
-                ?: throw IllegalStateException("다운로드 가능한 오디오 스트림을 찾지 못했습니다.")
+                ?: throw IllegalStateException("?ㅼ슫濡쒕뱶 媛?ν븳 ?ㅻ뵒???ㅽ듃由쇱쓣 李얠? 紐삵뻽?듬땲??")
 
-            val ext = if (chosen.mimeType.contains("webm") || chosen.mimeType.contains("opus")) "webm" else "m4a"
+            val isOpusStream = chosen.mimeType.contains("webm") || chosen.mimeType.contains("opus")
+            val ff = ffmpeg
+            val ext = when {
+                isOpusStream && ff != null -> "opus"
+                isOpusStream -> "webm"
+                else -> "m4a"
+            }
             val baseName = PlaylistRules.sanitizeFileName(title, videoId)
             var finalFile = File(storageDir, "$baseName.$ext")
             var suffix = 2
@@ -468,7 +477,8 @@ class ReplicaBackend(
                 finalFile = File(storageDir, "$baseName ($suffix).$ext")
                 suffix++
             }
-            val partFile = File(metaDir, "$videoId.${chosen.itag}.${System.nanoTime()}.$ext.part")
+            val rawExt = if (isOpusStream) "webm" else "m4a"
+            val partFile = File(metaDir, "$videoId.${chosen.itag}.${System.nanoTime()}.$rawExt.part")
 
             val downloadFile = LocalDownloadFile(partFile)
             try {
@@ -485,16 +495,58 @@ class ReplicaBackend(
                 downloadFile.close()
             }
 
+            val resolvedArtist = artist.ifEmpty { resolved.artist.orEmpty() }
+            val readyFile = if (ff != null) {
+                val muxedFile = File(metaDir, "$videoId.${System.nanoTime()}.$ext.mux")
+                val metadata = buildList {
+                    add("title" to title)
+                    if (resolvedArtist.isNotEmpty()) add("artist" to resolvedArtist)
+                }
+                try {
+                    if (isOpusStream) {
+                        ff.toOpus(partFile.absolutePath, muxedFile.absolutePath, metadata)
+                    } else {
+                        val coverPath = thumbnail.takeIf { it.isNotBlank() }?.let {
+                            runCatching { fetchThumbnail(it, metaDir) }.getOrNull()
+                        }
+                        try {
+                            ff.toM4a(
+                                input = partFile.absolutePath,
+                                output = muxedFile.absolutePath,
+                                cover = coverPath,
+                                metadata = metadata,
+                            )
+                        } catch (_: Throwable) {
+                            muxedFile.delete()
+                            ff.toM4a(
+                                input = partFile.absolutePath,
+                                output = muxedFile.absolutePath,
+                                cover = null,
+                                metadata = metadata,
+                            )
+                        }
+                    }
+                    partFile.delete()
+                    muxedFile
+                } catch (t: Throwable) {
+                    muxedFile.delete()
+                    partFile.delete()
+                    throw t
+                }
+            } else {
+                partFile
+            }
+
             if (finalFile.exists()) finalFile.delete()
-            if (!partFile.renameTo(finalFile)) {
-                partFile.copyTo(finalFile, overwrite = true)
-                partFile.delete()
+            if (!readyFile.renameTo(finalFile)) {
+                readyFile.copyTo(finalFile, overwrite = true)
+                readyFile.delete()
             }
 
             val metaObj = buildJsonObject {
                 put("video_id", videoId)
                 put("title", title)
-                put("artist", artist.ifEmpty { resolved.artist.orEmpty() })
+                put("artist", resolvedArtist)
                 put("duration", duration)
                 put("thumbnail", thumbnail)
                 put("file_path", finalFile.absolutePath)

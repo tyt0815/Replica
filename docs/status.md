@@ -2,11 +2,12 @@
 
 ## Android 0.5.1 수정
 
+- `ymusic-io/ffmpeg-build`(`n9.1-dev-18-g90cca8111b`)의 사전 빌드 Android `libffmpeg.so`(arm64-v8a·x86_64)를 체크섬 검증 후 스테이징하도록 `scripts/check-android.ps1`을 보완했다. `ReplicaBackend`가 `vendor/YMusicV4`의 `Ffmpeg.toOpus` / `Ffmpeg.toM4a`를 호출해 Opus 선택 시 `.opus`(Ogg Opus), M4A 선택 시 커버 아트·메타데이터 포함 `.m4a`로 저장한다.
 - 화면 상단의 뒤로 버튼을 제거했다. Android 뒤로 가기로 화면과 곡 선택을 닫는다. 곡을 길게 누르면 해당 곡을 선택한다. 기존 뒤로 버튼 위치의 원형 버튼은 모든 곡이 선택됐을 때 체크를 표시한다.
 - 더보기의 편집은 상세 화면 위에 재생목록 설정 다이얼로그를 연다. 이름과 자동 다운로드를 저장한다. 저장된 곡과 재생 기록은 시스템 목록이므로 이름을 고정한다.
 - 자동 다운로드는 안 함, Wi-Fi에서만, 항상 중 목록별로 설정한다. 기존 0.5.0에서 켠 목록은 항상으로 읽는다. 안 함이 기본이다. Wi-Fi 모드는 개별 다운로드 시작 전에 활성 연결을 확인한다.
-- ./scripts/check-android.ps1 통과. 정적 분석, 위젯 테스트 15개, Release APK 서명과 버전 0.5.1+9를 확인했다. 위젯 테스트에서 다이얼로그 저장·취소, 이름 변경, Wi-Fi 유무와 새 곡 다운로드를 검증했다.
-- Android 에뮬레이터에서 0.5.0 위에 설치했다. 다이얼로그의 세 옵션, 길게 누른 곡 선택, 전체 선택, 가로 회전 후 선택 유지를 확인했다. Fold8 실기기와 실제 YouTube 자동 다운로드는 미검증이다.
+- ./scripts/check-android.ps1 통과. 정적 분석, 위젯 테스트 15개, Release APK(24.5MB) 서명과 버전 0.5.1+9를 확인했다. 위젯 테스트에서 다이얼로그 저장·취소, 이름 변경, Wi-Fi 유무와 새 곡 다운로드를 검증했다.
+- Android 에뮬레이터(`webtube_test`)에서 0.5.1 Release APK 설치 후 `10 Second Piano Piece 1.opus` 변환 다운로드(8초)와 자동 재생(`USAGE_MEDIA` / `CONTENT_TYPE_MUSIC`, `state:started`, 48kHz)을 확인했다. 다이얼로그의 세 옵션, 길게 누른 곡 선택, 전체 선택, 가로 회전 후 선택 유지도 확인했다. Fold8 실기기와 실제 YouTube 자동 다운로드는 미검증이다.
 
 ## Android 0.5.0 수정
 

@@ -95,6 +95,8 @@ class MainActivity : AudioServiceActivity() {
                     main = engineManager,
                 )
             },
+            ffmpegBinaryPath = File(applicationInfo.nativeLibraryDir, "libffmpeg.so")
+                .takeIf { it.isFile }?.absolutePath,
             coreVersion = BuildConfig.VERSION_NAME,
         )
 
