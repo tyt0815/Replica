@@ -48,6 +48,18 @@ class PlatformAdapters {
 
   Stream<double> get mediaVolumeStream => _volumeChanges.stream;
 
+  Future<bool> isWifiConnected() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await updateChannel.invokeMethod<bool>('is_wifi_connected') ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   Future<double> getMediaVolume() async {
     if (!Platform.isAndroid) {
       return _fallbackVolume;

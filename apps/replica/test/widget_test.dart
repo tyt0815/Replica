@@ -289,9 +289,9 @@ void main() {
     expect(extractHistoryDeviceName('History.rm'), isNull);
   });
 
-  test('Backend bridge returns 0.5.0 and enforces .rm rules', () {
+  test('Backend bridge returns 0.5.1 and enforces .rm rules', () {
     final core = NativeReplicaMusicCore.openOrFallback();
-    expect(core.coreVersion, '0.5.0');
+    expect(core.coreVersion, '0.5.1');
     expect(core.isReplicaPlaylist('Chill.rm'), isTrue);
     expect(core.isReplicaPlaylist('Chill'), isFalse);
     expect(core.toRemotePlaylistTitle('Chill'), 'Chill.rm');
@@ -959,14 +959,14 @@ void main() {
       expect(core.historyRequests[2]['playlist_loaded'], isTrue);
       expect(core.historyRequests[2]['existing_set_video_id'], 'svid-track-1');
 
-      await tester.tap(find.byKey(const Key('detail-back-button')));
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('playlist-tile-history')));
       await tester.pumpAndSettle();
       expect(core.playlistTrackFetchCount, 0);
       expect(find.byKey(const Key('detail-more-button')), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('detail-back-button')));
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const Key('playlist-tile-history-PL_HISTORY_OTHER')),
@@ -1067,7 +1067,7 @@ void main() {
       await tester.tap(find.text('First Track'));
       await tester.pumpAndSettle();
       expect(handler.playbackState.value.playing, isTrue);
-      await tester.tap(find.byKey(const Key('detail-back-button')));
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.search_outlined));
@@ -1156,20 +1156,36 @@ void main() {
       );
       expect(find.byKey(const Key('track-tile-new-track-1')), findsOneWidget);
       final editTrackKey = find.byKey(const Key('edit-select-new-track-1'));
-      await tester.tap(find.byKey(const Key('detail-more-button')));
+      final selectedTrack = find.byKey(const Key('track-tile-new-track-1'));
+      await tester.ensureVisible(selectedTrack);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('편집'));
-      await tester.pump();
-      await tester.pumpAndSettle(const Duration(milliseconds: 150));
+      await tester.longPress(selectedTrack);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: editTrackKey,
+          matching: find.byIcon(Icons.check_circle_rounded),
+        ),
+        findsOneWidget,
+      );
       expect(find.byKey(const Key('playlist-edit-dock')), findsOneWidget);
       expect(find.byKey(const Key('mini-player')), findsNothing);
       expect(find.byKey(const Key('bottom-nav-bar')), findsNothing);
       expect(find.byIcon(Icons.drag_handle_rounded), findsNothing);
 
-      await tester.tap(find.text('전체 선택'));
+      final selectAll = find.byKey(const Key('detail-edit-select-all'));
+      expect(tester.widget<IconButton>(selectAll).icon, isA<Icon>());
+      expect(
+        (tester.widget<IconButton>(selectAll).icon as Icon).icon,
+        Icons.radio_button_unchecked_rounded,
+      );
+      await tester.tap(selectAll);
       await tester.pumpAndSettle();
-      expect(find.text('전체 해제'), findsOneWidget);
-      await tester.tap(find.text('전체 해제'));
+      expect(
+        (tester.widget<IconButton>(selectAll).icon as Icon).icon,
+        Icons.check_circle_rounded,
+      );
+      await tester.tap(selectAll);
       await tester.pumpAndSettle();
       await tester.ensureVisible(editTrackKey);
       await tester.pumpAndSettle();
@@ -1178,7 +1194,7 @@ void main() {
       await tester.tap(find.text('삭제'));
       await tester.pumpAndSettle();
       expect(editTrackKey, findsNothing);
-      await tester.tap(find.byKey(const Key('detail-back-button')));
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('track-tile-new-track-1')), findsOneWidget);
 
@@ -1187,16 +1203,17 @@ void main() {
   );
 
   testWidgets(
-    'Playlist editor keeps the detail header and only downloads with opt-in',
+    'Playlist settings dialog renames the playlist and only downloads with opt-in',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(360, 840);
       addTearDown(tester.view.reset);
+      final adapters = _FakePlaylistNetworkAdapters();
       final core = _FakePlaylistDownloadCore();
       await tester.pumpWidget(
         ReplicaMusicApp(
           core: core,
-          adapters: _FakeLoggedInAdapters(),
+          adapters: adapters,
           audioEngine: _FakeAudioEngine(),
           fileExistsOverride: (path) => path.contains('new-track-1'),
         ),
@@ -1216,33 +1233,77 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      final option = find.byKey(const Key('playlist-auto-download'));
-      await openEditor();
+      final trackRow = find.byKey(const Key('track-tile-new-track-1'));
+      await tester.ensureVisible(trackRow);
+      await tester.longPress(trackRow);
+      await tester.pumpAndSettle();
       expect(find.byKey(const Key('detail-playlist-title')), findsOneWidget);
-      expect(find.byKey(const Key('detail-play-button')), findsNothing);
-      expect(find.byKey(const Key('detail-shuffle-button')), findsNothing);
       expect(find.byKey(const Key('edit-drag-new-track-1')), findsOneWidget);
-      expect(tester.widget<CheckboxListTile>(option).value, isFalse);
-      await tester.tap(option);
+      expect(find.byKey(const Key('playlist-auto-download-off')), findsNothing);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      final off = find.byKey(const Key('playlist-auto-download-off'));
+      final wifi = find.byKey(const Key('playlist-auto-download-wifiOnly'));
+      final always = find.byKey(const Key('playlist-auto-download-always'));
+      final save = find.byKey(const Key('playlist-settings-save'));
+
+      void expectSelected(Finder option) {
+        final tile = tester.widget<RadioListTile<dynamic>>(option);
+        final group = tester.widget<RadioGroup<dynamic>>(
+          find.byWidgetPredicate((widget) => widget is RadioGroup<dynamic>),
+        );
+        expect(group.groupValue, tile.value);
+      }
+
+      Future<void> refreshPlaylist() async {
+        final refresh = tester.state<RefreshIndicatorState>(
+          find.byType(RefreshIndicator).hitTestable().first,
+        );
+        unawaited(refresh.show());
+        await tester.pumpAndSettle();
+      }
+
+      await openEditor();
+      expect(find.byKey(const Key('playlist-settings-dialog')), findsOneWidget);
+      expect(find.byKey(const Key('playlist-edit-dock')), findsNothing);
+      expectSelected(off);
+      await tester.tap(always);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('취소'));
       await tester.pumpAndSettle();
       expect(core.downloadRequests, isEmpty);
-      await tester.tap(find.byKey(const Key('detail-back-button')));
-      await tester.pumpAndSettle();
 
       await openEditor();
-      expect(tester.widget<CheckboxListTile>(option).value, isFalse);
-      await tester.tap(option);
+      expectSelected(off);
+      await tester.enterText(
+        find.byKey(const Key('playlist-settings-name')),
+        'Renamed mix',
+      );
+      await tester.tap(wifi);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('detail-edit-confirm')));
+      expectSelected(wifi);
+      await tester.tap(save);
       await tester.pumpAndSettle();
-      expect(core.downloadRequests, hasLength(1));
+      expect(core.renamedTitle, startsWith('Renamed mix.'));
+      expect(core.downloadRequests, isEmpty);
       expect(find.byKey(const Key('detail-play-button')), findsOneWidget);
 
+      adapters.onWifi = true;
+      await refreshPlaylist();
+      expect(core.downloadRequests, hasLength(1));
+
+      adapters.onWifi = false;
       core.includeNewRemoteTrack = true;
-      final refresh = tester.state<RefreshIndicatorState>(
-        find.byType(RefreshIndicator).hitTestable().first,
-      );
-      unawaited(refresh.show());
+      await refreshPlaylist();
+      expect(core.downloadRequests, hasLength(1));
+
+      await openEditor();
+      expectSelected(wifi);
+      await tester.tap(always);
+      await tester.pumpAndSettle();
+      expectSelected(always);
+      await tester.tap(save);
       await tester.pumpAndSettle();
       expect(core.downloadRequests, hasLength(2));
       expect(
@@ -1521,11 +1582,23 @@ class _FakeHistoryCore extends _FakeMediaCore {
   }
 }
 
+class _FakePlaylistNetworkAdapters extends _FakeLoggedInAdapters {
+  bool onWifi = false;
+
+  @override
+  Future<bool> isWifiConnected() async => onWifi;
+}
+
 class _FakePlaylistDownloadCore extends _FakeDownloadFlowCore {
   bool includeNewRemoteTrack = false;
+  String? renamedTitle;
   final List<dynamic> saved = [];
   @override
   Future<Map<String, dynamic>> invoke(Map<String, dynamic> request) async {
+    if (request['op'] == 'rename_playlist') {
+      renamedTitle = request['new_remote_title'] as String;
+      return {'renamed': true};
+    }
     if (request['op'] == 'list_playlists') {
       return {
         'playlists': [

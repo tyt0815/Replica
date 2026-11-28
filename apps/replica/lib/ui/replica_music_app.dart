@@ -18,6 +18,16 @@ import '../theme/replica_music_theme.dart';
 import 'coss_components.dart';
 import 'now_playing_sheet.dart';
 
+enum _PlaylistAutoDownload {
+  off('안 함'),
+  wifiOnly('Wi-Fi에서만'),
+  always('항상');
+
+  const _PlaylistAutoDownload(this.label);
+
+  final String label;
+}
+
 class ReplicaMusicApp extends StatefulWidget {
   const ReplicaMusicApp({
     super.key,
@@ -75,8 +85,8 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
   bool _isSavingPlaylistEdit = false;
   List<TrackItem> _editingTracks = const [];
   final Set<TrackItem> _selectedEditingTracks = {};
-  final Set<String> _autoDownloadPlaylistIds = {};
-  bool _editingAutoDownload = false;
+  final Map<String, _PlaylistAutoDownload> _autoDownloadByPlaylist = {};
+  bool _isSavingPlaylistSettings = false;
   bool _isRunningStorageCleanup = false;
   int _cachedDownloadedBytes = 0;
   int _sessionGeneration = 0;
@@ -386,10 +396,22 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
       if (mounted) {
         setState(() {
           _themeMode = parsedTheme;
-          _autoDownloadPlaylistIds.addAll(
-            (raw['auto_download_playlist_ids'] as List? ?? const [])
-                .whereType<String>(),
-          );
+          final downloadModes = raw['playlist_auto_download'];
+          final legacyIds = raw['auto_download_playlist_ids'];
+          if (downloadModes is Map<String, dynamic>) {
+            for (final entry in downloadModes.entries) {
+              final mode = _PlaylistAutoDownload.values
+                  .where((mode) => mode.name == entry.value)
+                  .firstOrNull;
+              if (mode != null && mode != _PlaylistAutoDownload.off) {
+                _autoDownloadByPlaylist[entry.key] = mode;
+              }
+            }
+          } else if (legacyIds is List) {
+            for (final id in legacyIds.whereType<String>()) {
+              _autoDownloadByPlaylist[id] = _PlaylistAutoDownload.always;
+            }
+          }
           if (rawAudioFormat == 'opus' || rawAudioFormat == 'm4a') {
             _audioFormat = parsedAudioFormat;
           }
@@ -455,7 +477,9 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     await _writeJsonFileAtomic(file, {
       'theme_mode': _themeMode.name,
       'audio_format': _audioFormat,
-      'auto_download_playlist_ids': _autoDownloadPlaylistIds.toList(),
+      'playlist_auto_download': _autoDownloadByPlaylist.map(
+        (id, mode) => MapEntry(id, mode.name),
+      ),
       'now_playing_on_right': _nowPlayingOnRight,
       'auto_delete_unused_days': _autoDeleteUnusedDays,
       'max_storage_gb': _maxStorageGb,
@@ -1712,7 +1736,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
       final refreshing = {
         for (final pl in playlistsToRefresh) pl.id: pl,
         for (final pl in remote)
-          if (_autoDownloadPlaylistIds.contains(pl.id) &&
+          if (_autoDownloadByPlaylist.containsKey(pl.id) &&
               !pushingIds.contains(pl.id))
             pl.id: pl,
       };
@@ -2508,11 +2532,23 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
   bool _canAutoDownloadPlaylist(PlaylistItem playlist) =>
       playlist.isRemote && !_isHistoryPlaylist(playlist);
 
+  Future<bool> _isAutomaticDownloadAllowed(String playlistId) async {
+    if (!mounted || _webSession == null) return false;
+    final mode = _autoDownloadByPlaylist[playlistId];
+    if (mode == _PlaylistAutoDownload.always) return true;
+    if (mode != _PlaylistAutoDownload.wifiOnly) return false;
+    final onWifi = await _adapters.isWifiConnected();
+    if (!mounted || _webSession == null) return false;
+    final currentMode = _autoDownloadByPlaylist[playlistId];
+    return currentMode == _PlaylistAutoDownload.always ||
+        (currentMode == _PlaylistAutoDownload.wifiOnly && onWifi);
+  }
+
   void _maybeAutoDownload(PlaylistItem playlist, List<TrackItem> tracks) {
     if (mounted &&
         _webSession != null &&
         _canAutoDownloadPlaylist(playlist) &&
-        _autoDownloadPlaylistIds.contains(playlist.id)) {
+        _autoDownloadByPlaylist.containsKey(playlist.id)) {
       unawaited(
         _downloadAllPlaylistTracks(
           playlist.copyWith(tracks: tracks),
@@ -2541,6 +2577,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
       if (!automatic) _showSnack('모든 곡이 이미 다운로드되어 있습니다.');
       return;
     }
+    if (automatic && !await _isAutomaticDownloadAllowed(playlist.id)) return;
     final permitted = automatic
         ? await _adapters.hasStoragePermission()
         : await _ensureStoragePermissionForDownload();
@@ -2571,9 +2608,16 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
           while (true) {
             if (!mounted ||
                 aborted ||
+                _cancelledBulkPlaylists.contains(playlist.id)) {
+              return;
+            }
+            if (nextIndex >= pending.length ||
                 (automatic &&
-                    (_webSession == null ||
-                        !_autoDownloadPlaylistIds.contains(playlist.id))) ||
+                    !await _isAutomaticDownloadAllowed(playlist.id))) {
+              return;
+            }
+            if (!mounted ||
+                aborted ||
                 _cancelledBulkPlaylists.contains(playlist.id)) {
               return;
             }
@@ -3130,11 +3174,14 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     }
   }
 
-  void _enterPlaylistEditMode(PlaylistItem playlist) {
+  void _enterPlaylistEditMode(PlaylistItem playlist, TrackItem selectedTrack) {
+    if (_isSavingPlaylistEdit || _isSavingPlaylistSettings) return;
     setState(() {
       _isEditingPlaylist = true;
       _editingTracks = List<TrackItem>.of(playlist.tracks);
-      _editingAutoDownload = _autoDownloadPlaylistIds.contains(playlist.id);
+      _selectedEditingTracks
+        ..clear()
+        ..add(selectedTrack);
     });
   }
 
@@ -3158,22 +3205,8 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
           edited.length,
           (i) => edited[i].id == playlist.tracks[i].id,
         ).every((e) => e);
-    final autoDownloadChanged =
-        _canAutoDownloadPlaylist(playlist) &&
-        _editingAutoDownload != _autoDownloadPlaylistIds.contains(playlist.id);
-    if (autoDownloadChanged) {
-      setState(() {
-        if (_editingAutoDownload) {
-          _autoDownloadPlaylistIds.add(playlist.id);
-        } else {
-          _autoDownloadPlaylistIds.remove(playlist.id);
-        }
-      });
-      unawaited(_saveAppSettings());
-    }
     if (unchanged) {
       _cancelPlaylistEditMode();
-      if (autoDownloadChanged) _maybeAutoDownload(playlist, edited);
       return;
     }
     setState(() => _isSavingPlaylistEdit = true);
@@ -3280,6 +3313,149 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     return CoverPalette.fromBase(fallbackColor);
   }
 
+  Future<void> _showPlaylistSettingsDialog(PlaylistItem playlist) async {
+    final originalName = _displayTitleForPlaylist(playlist);
+    final canRename =
+        playlist.id != _allSongsPlaylistId && !_isHistoryPlaylist(playlist);
+    final canAutoDownload = _canAutoDownloadPlaylist(playlist);
+    final generation = _sessionGeneration;
+    var name = originalName;
+    var autoDownload =
+        _autoDownloadByPlaylist[playlist.id] ?? _PlaylistAutoDownload.off;
+    final confirmed = await _showPaneDialog<bool>(
+      builder: (_) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          key: const Key('playlist-settings-dialog'),
+          scrollable: true,
+          title: const Text('재생목록 설정'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                key: const Key('playlist-settings-name'),
+                initialValue: originalName,
+                readOnly: !canRename,
+                decoration: const InputDecoration(labelText: '재생목록 이름'),
+                onChanged: (value) => update(() => name = value.trim()),
+              ),
+              const SizedBox(height: 16),
+              const Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text('자동 다운로드'),
+              ),
+              RadioGroup<_PlaylistAutoDownload>(
+                groupValue: autoDownload,
+                onChanged: (value) {
+                  if (value != null) update(() => autoDownload = value);
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final mode in _PlaylistAutoDownload.values)
+                      RadioListTile<_PlaylistAutoDownload>(
+                        key: ValueKey('playlist-auto-download-${mode.name}'),
+                        value: mode,
+                        enabled: canAutoDownload,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(mode.label),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              key: const Key('playlist-settings-save'),
+              onPressed: name.isEmpty
+                  ? null
+                  : () => Navigator.of(context).pop(true),
+              child: const Text('저장'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted || generation != _sessionGeneration) {
+      return;
+    }
+    final current = _rawPlaylists
+        .where((item) => item.id == playlist.id)
+        .firstOrNull;
+    if (current == null) return;
+
+    setState(() => _isSavingPlaylistSettings = true);
+    try {
+      if (canRename && name != originalName) {
+        final formattedTitle = widget.core.toRemotePlaylistTitle(name);
+        if (formattedTitle == null || isHistoryRemoteTitle(formattedTitle)) {
+          _showSnack('사용할 수 없는 재생목록 이름입니다.');
+          return;
+        }
+        final timestamp = nextPlaylistTimestamp(current.updatedAt);
+        final remoteTitle = buildVersionedRemoteTitle(
+          formattedTitle,
+          timestamp,
+        );
+        final session = _webSession;
+        final pushRename =
+            current.isRemote && session != null && !current.hasPendingLocalEdit;
+        if (pushRename) {
+          await widget.core.invoke({
+            'op': 'rename_playlist',
+            'playlist_id': current.id,
+            'new_remote_title': remoteTitle,
+            'session': session,
+          });
+        }
+        if (!mounted || generation != _sessionGeneration) return;
+        setState(() {
+          _rawPlaylists = [
+            for (final item in _rawPlaylists)
+              if (item.id == current.id)
+                item.copyWith(
+                  remoteTitle: remoteTitle,
+                  updatedAt: timestamp,
+                  hasPendingLocalEdit:
+                      item.hasPendingLocalEdit ||
+                      (item.isRemote && !pushRename),
+                )
+              else
+                item,
+          ];
+        });
+        unawaited(_saveCachedPlaylists());
+      }
+      if (canAutoDownload &&
+          mounted &&
+          generation == _sessionGeneration &&
+          autoDownload !=
+              (_autoDownloadByPlaylist[current.id] ??
+                  _PlaylistAutoDownload.off)) {
+        setState(() {
+          if (autoDownload == _PlaylistAutoDownload.off) {
+            _autoDownloadByPlaylist.remove(current.id);
+          } else {
+            _autoDownloadByPlaylist[current.id] = autoDownload;
+          }
+        });
+        unawaited(_saveAppSettings());
+        _maybeAutoDownload(current, current.tracks);
+      }
+    } catch (_) {
+      if (mounted && generation == _sessionGeneration) {
+        _showSnack('재생목록 설정을 저장하지 못했습니다.');
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingPlaylistSettings = false);
+    }
+  }
+
   Widget _buildPlaylistContextMenuButton(
     BuildContext context,
     PlaylistItem playlist,
@@ -3297,52 +3473,29 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
             key: const Key('detail-more-button'),
             onTap: () async {
               final dl = _playlistDownloadProgress[playlist.id];
-              final action = await _showContextMenu(
-                anchorContext,
-                isAllSongs
-                    ? [
-                        (
-                          value: 'edit',
-                          label: '편집',
-                          enabled: playlist.tracks.isNotEmpty,
-                        ),
-                      ]
-                    : isHistory
-                    ? [
-                        (
-                          value: 'edit',
-                          label: '편집',
-                          enabled: playlist.tracks.isNotEmpty,
-                        ),
-                      ]
-                    : [
-                        (
-                          value: 'edit',
-                          label: '편집',
-                          enabled: playlist.tracks.isNotEmpty,
-                        ),
-                        (
-                          value: dl != null
-                              ? 'cancel_download_all'
-                              : 'download_all',
-                          label: dl != null
-                              ? '다운로드 취소 (${dl.done}/${dl.total})'
-                              : '다운로드',
-                          enabled: dl != null || playlist.tracks.isNotEmpty,
-                        ),
-                        (
-                          value: 'delete_playlist',
-                          label: '재생 목록 삭제',
-                          enabled: true,
-                        ),
-                      ],
-              );
+              final action = await _showContextMenu(anchorContext, [
+                (
+                  value: 'edit',
+                  label: '편집',
+                  enabled: !_isSavingPlaylistSettings,
+                ),
+                if (!isAllSongs && !isHistory) ...[
+                  (
+                    value: dl != null ? 'cancel_download_all' : 'download_all',
+                    label: dl != null
+                        ? '다운로드 취소 (${dl.done}/${dl.total})'
+                        : '다운로드',
+                    enabled: dl != null || playlist.tracks.isNotEmpty,
+                  ),
+                  (value: 'delete_playlist', label: '재생 목록 삭제', enabled: true),
+                ],
+              ]);
               if (action == null || !mounted) {
                 return;
               }
               switch (action) {
                 case 'edit':
-                  _enterPlaylistEditMode(playlist);
+                  await _showPlaylistSettingsDialog(playlist);
                   break;
                 case 'download_all':
                   await _downloadAllPlaylistTracks(playlist);
@@ -4311,7 +4464,6 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                                       ? _buildPlaylistDetailPane(
                                           context,
                                           detailPlaylist,
-                                          showBackButton: true,
                                         )
                                       : SafeArea(
                                           bottom: false,
@@ -4922,6 +5074,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     Widget? leading,
     Widget? trailing,
     required VoidCallback onTap,
+    VoidCallback? onLongPress,
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -4936,6 +5089,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
           Positioned.fill(
             child: InkWell(
               onTap: onTap,
+              onLongPress: onLongPress,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
@@ -6136,14 +6290,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
           child: Padding(
             key: Key('edit-select-${track.id}'),
             padding: const EdgeInsets.only(right: 16),
-            child: Icon(
-              selected
-                  ? Icons.check_circle_rounded
-                  : Icons.radio_button_unchecked_rounded,
-              color: selected
-                  ? replicaAccentColor
-                  : Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+            child: _playlistSelectionIcon(context, selected),
           ),
         ),
         trailing: canReorder
@@ -6209,56 +6356,51 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     );
   }
 
+  bool get _allEditingTracksSelected =>
+      _editingTracks.isNotEmpty &&
+      _selectedEditingTracks.length == _editingTracks.length;
+
+  void _toggleAllEditingTracks() {
+    final allSelected = _allEditingTracksSelected;
+    setState(() {
+      _selectedEditingTracks.clear();
+      if (!allSelected) _selectedEditingTracks.addAll(_editingTracks);
+    });
+  }
+
+  Widget _playlistSelectionIcon(BuildContext context, bool selected) {
+    return Icon(
+      selected
+          ? Icons.check_circle_rounded
+          : Icons.radio_button_unchecked_rounded,
+      color: selected
+          ? replicaAccentColor
+          : Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+  }
+
   Widget _buildPlaylistEditDock() {
-    final allSelected =
-        _editingTracks.isNotEmpty &&
-        _selectedEditingTracks.length == _editingTracks.length;
     return _FloatingDockCapsule(
       key: const Key('playlist-edit-dock'),
       height: _dockHeight,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          TextButton.icon(
-            onPressed: _editingTracks.isEmpty || _isSavingPlaylistEdit
-                ? null
-                : () {
-                    setState(() {
-                      _selectedEditingTracks.clear();
-                      if (!allSelected) {
-                        _selectedEditingTracks.addAll(_editingTracks);
-                      }
-                    });
-                  },
-            icon: Icon(
-              allSelected ? Icons.check_circle_rounded : Icons.done_all_rounded,
-            ),
-            label: Text(allSelected ? '전체 해제' : '전체 선택'),
-          ),
-          TextButton.icon(
-            onPressed: _selectedEditingTracks.isEmpty || _isSavingPlaylistEdit
-                ? null
-                : () {
-                    setState(() {
-                      _editingTracks.removeWhere(
-                        _selectedEditingTracks.contains,
-                      );
-                      _selectedEditingTracks.clear();
-                    });
-                  },
-            icon: const Icon(Icons.delete_outline_rounded),
-            label: const Text('삭제'),
-          ),
-        ],
+      child: Center(
+        child: TextButton.icon(
+          onPressed: _selectedEditingTracks.isEmpty || _isSavingPlaylistEdit
+              ? null
+              : () {
+                  setState(() {
+                    _editingTracks.removeWhere(_selectedEditingTracks.contains);
+                    _selectedEditingTracks.clear();
+                  });
+                },
+          icon: const Icon(Icons.delete_outline_rounded),
+          label: const Text('삭제'),
+        ),
       ),
     );
   }
 
-  Widget _buildPlaylistDetailPane(
-    BuildContext context,
-    PlaylistItem playlist, {
-    required bool showBackButton,
-  }) {
+  Widget _buildPlaylistDetailPane(BuildContext context, PlaylistItem playlist) {
     final isAllSongs = playlist.id == _allSongsPlaylistId;
     final media = MediaQuery.of(context);
     final topInset = media.padding.top;
@@ -6326,27 +6468,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                 ),
               ),
               const SizedBox(height: 16),
-              if (_isEditingPlaylist) ...[
-                if (_canAutoDownloadPlaylist(playlist))
-                  CheckboxListTile(
-                    key: const Key('playlist-auto-download'),
-                    title: const Text(
-                      '동기화 시 자동 다운로드',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                    value: _editingAutoDownload,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    contentPadding: EdgeInsets.zero,
-                    side: const BorderSide(color: Colors.white70),
-                    onChanged: _isSavingPlaylistEdit
-                        ? null
-                        : (value) {
-                            setState(
-                              () => _editingAutoDownload = value ?? false,
-                            );
-                          },
-                  ),
-              ] else
+              if (!_isEditingPlaylist)
                 Row(
                   children: [
                     Expanded(
@@ -6801,6 +6923,9 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                                 ),
                           onTap: () =>
                               _onTrackRowTap(track, queue: playlist.tracks),
+                          onLongPress: _isOtherDeviceHistory(playlist)
+                              ? null
+                              : () => _enterPlaylistEditMode(playlist, track),
                         );
                       },
                     ),
@@ -6816,38 +6941,46 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
               top: topInset + 12,
               left: 16,
               right: 16,
-              child: Row(
-                children: [
-                  if (showBackButton)
-                    _DockCircleButton(
-                      key: const Key('detail-back-button'),
-                      tooltip: '뒤로가기',
-                      icon: Icons.chevron_left_rounded,
-                      iconColor: replicaAccentColor,
-                      size: 42,
-                      iconSize: 26,
-                      onPressed: _isEditingPlaylist
-                          ? (_isSavingPlaylistEdit
-                                ? null
-                                : _cancelPlaylistEditMode)
-                          : () => setState(() => _selectedPlaylistId = null),
-                    ),
-                  const Spacer(),
-                  if (_isEditingPlaylist)
-                    _DockCircleButton(
-                      key: const Key('detail-edit-confirm'),
-                      tooltip: '확정',
-                      icon: Icons.check_rounded,
-                      iconColor: replicaAccentColor,
-                      size: 42,
-                      iconSize: 24,
-                      onPressed: _isSavingPlaylistEdit
-                          ? null
-                          : () => unawaited(_confirmPlaylistEditMode(playlist)),
-                    )
-                  else
-                    _buildPlaylistContextMenuButton(context, playlist),
-                ],
+              child: Semantics(
+                explicitChildNodes: true,
+                container: true,
+                child: Row(
+                  children: [
+                    if (_isEditingPlaylist)
+                      Semantics(
+                        container: true,
+                        label: '전체 선택',
+                        checked: _allEditingTracksSelected,
+                        child: IconButton(
+                          key: const Key('detail-edit-select-all'),
+                          icon: _playlistSelectionIcon(
+                            context,
+                            _allEditingTracksSelected,
+                          ),
+                          onPressed:
+                              _editingTracks.isEmpty || _isSavingPlaylistEdit
+                              ? null
+                              : _toggleAllEditingTracks,
+                        ),
+                      ),
+                    const Spacer(),
+                    if (_isEditingPlaylist)
+                      _DockCircleButton(
+                        key: const Key('detail-edit-confirm'),
+                        tooltip: '확정',
+                        icon: Icons.check_rounded,
+                        iconColor: replicaAccentColor,
+                        size: 42,
+                        iconSize: 24,
+                        onPressed: _isSavingPlaylistEdit
+                            ? null
+                            : () =>
+                                  unawaited(_confirmPlaylistEditMode(playlist)),
+                      )
+                    else
+                      _buildPlaylistContextMenuButton(context, playlist),
+                  ],
+                ),
               ),
             ),
           ],

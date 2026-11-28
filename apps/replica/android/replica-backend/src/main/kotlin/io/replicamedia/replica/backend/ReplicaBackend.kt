@@ -50,7 +50,7 @@ class ReplicaBackend(
     private val cookieProvider: () -> String,
     private val engineManager: DynamicEngineManager,
     private val playerEngineFactory: () -> DynamicEnginePlayer,
-    val coreVersion: String = "0.5.0",
+    val coreVersion: String = "0.5.1",
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val innertube = InnertubeSupplement(httpClient, cookieProvider)
