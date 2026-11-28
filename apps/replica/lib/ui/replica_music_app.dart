@@ -6692,39 +6692,98 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
   Widget _buildPlaylistEditDock() {
     final hasSelection =
         _selectedEditingTracks.isNotEmpty && !_isSavingPlaylistEdit;
-    return _FloatingDockCapsule(
+    final canSelectAll = _editingTracks.isNotEmpty && !_isSavingPlaylistEdit;
+    final allSelected = _allEditingTracksSelected;
+    final theme = Theme.of(context);
+    final selectColor = !canSelectAll
+        ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4)
+        : (allSelected ? replicaAccentColor : theme.colorScheme.onSurface);
+    return SizedBox(
       key: const Key('playlist-edit-dock'),
       height: _dockHeight,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          TextButton.icon(
-            key: const Key('playlist-edit-add-to-playlist'),
-            onPressed: hasSelection
-                ? () {
-                    final selected = _editingTracks
-                        .where(_selectedEditingTracks.contains)
-                        .toList(growable: false);
-                    unawaited(_openAddTracksToPlaylistDialog(selected));
-                  }
-                : null,
-            icon: const Icon(Icons.playlist_add_rounded),
-            label: const Text('재생목록에 추가'),
+          Semantics(
+            container: true,
+            label: '전체 선택',
+            checked: allSelected,
+            child: _DockCircleSurface(
+              size: _dockHeight,
+              child: Material(
+                color: Colors.transparent,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  key: const Key('detail-edit-select-all'),
+                  customBorder: const CircleBorder(),
+                  onTap: canSelectAll ? _toggleAllEditingTracks : null,
+                  child: SizedBox(
+                    width: _dockHeight,
+                    height: _dockHeight,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          allSelected
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked_rounded,
+                          size: 22,
+                          color: selectColor,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '전체',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            height: 1.1,
+                            color: selectColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
-          TextButton.icon(
-            key: const Key('playlist-edit-delete'),
-            onPressed: hasSelection
-                ? () {
-                    setState(() {
-                      _editingTracks.removeWhere(
-                        _selectedEditingTracks.contains,
-                      );
-                      _selectedEditingTracks.clear();
-                    });
-                  }
-                : null,
-            icon: const Icon(Icons.delete_outline_rounded),
-            label: const Text('삭제'),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _FloatingDockCapsule(
+              height: _dockHeight,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton.icon(
+                    key: const Key('playlist-edit-add-to-playlist'),
+                    onPressed: hasSelection
+                        ? () {
+                            final selected = _editingTracks
+                                .where(_selectedEditingTracks.contains)
+                                .toList(growable: false);
+                            unawaited(_openAddTracksToPlaylistDialog(selected));
+                          }
+                        : null,
+                    icon: const Icon(Icons.playlist_add_rounded),
+                    label: const Text('재생목록에 추가'),
+                  ),
+                  TextButton.icon(
+                    key: const Key('playlist-edit-delete'),
+                    onPressed: hasSelection
+                        ? () {
+                            setState(() {
+                              _editingTracks.removeWhere(
+                                _selectedEditingTracks.contains,
+                              );
+                              _selectedEditingTracks.clear();
+                            });
+                          }
+                        : null,
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const Text('삭제'),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -7277,28 +7336,6 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                 container: true,
                 child: Row(
                   children: [
-                    if (_isEditingPlaylist)
-                      Semantics(
-                        container: true,
-                        label: '전체 선택',
-                        checked: _allEditingTracksSelected,
-                        child: _DockCircleButton(
-                          key: const Key('detail-edit-select-all'),
-                          tooltip: '전체 선택',
-                          icon: _allEditingTracksSelected
-                              ? Icons.check_circle_rounded
-                              : Icons.radio_button_unchecked_rounded,
-                          iconColor: _allEditingTracksSelected
-                              ? replicaAccentColor
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                          size: 42,
-                          iconSize: 22,
-                          onPressed:
-                              _editingTracks.isEmpty || _isSavingPlaylistEdit
-                              ? null
-                              : _toggleAllEditingTracks,
-                        ),
-                      ),
                     const Spacer(),
                     if (_isEditingPlaylist)
                       _DockCircleButton(

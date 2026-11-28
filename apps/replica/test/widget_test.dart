@@ -289,9 +289,9 @@ void main() {
     expect(extractHistoryDeviceName('History.rm'), isNull);
   });
 
-  test('Backend bridge returns 0.5.2 and enforces .rm rules', () {
+  test('Backend bridge returns 0.5.3 and enforces .rm rules', () {
     final core = NativeReplicaMusicCore.openOrFallback();
-    expect(core.coreVersion, '0.5.2');
+    expect(core.coreVersion, '0.5.3');
     expect(core.isReplicaPlaylist('Chill.rm'), isTrue);
     expect(core.isReplicaPlaylist('Chill'), isFalse);
     expect(core.toRemotePlaylistTitle('Chill'), 'Chill.rm');
@@ -1173,8 +1173,16 @@ void main() {
       expect(find.byKey(const Key('bottom-nav-bar')), findsNothing);
       expect(find.byIcon(Icons.drag_handle_rounded), findsNothing);
 
+      final editDock = find.byKey(const Key('playlist-edit-dock'));
+      expect(tester.getSize(editDock).height, 62);
       final selectAll = find.byKey(const Key('detail-edit-select-all'));
-      expect(tester.getSize(selectAll), const Size(42, 42));
+      final selectAllSize = tester.getSize(selectAll);
+      expect(selectAllSize.width, closeTo(60.2, 2.0));
+      expect(selectAllSize.height, selectAllSize.width);
+      expect(
+        find.descendant(of: selectAll, matching: find.text('전체')),
+        findsOneWidget,
+      );
       expect(
         find.descendant(
           of: selectAll,

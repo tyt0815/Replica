@@ -52,7 +52,7 @@ class ReplicaBackend(
     private val engineManager: DynamicEngineManager,
     private val playerEngineFactory: () -> DynamicEnginePlayer,
     private val ffmpegBinaryPath: String? = null,
-    val coreVersion: String = "0.5.2",
+    val coreVersion: String = "0.5.3",
 ) {
     private val ffmpeg: Ffmpeg? = ffmpegBinaryPath?.takeIf { it.isNotBlank() }?.let(::Ffmpeg)
     private val json = Json { ignoreUnknownKeys = true }
