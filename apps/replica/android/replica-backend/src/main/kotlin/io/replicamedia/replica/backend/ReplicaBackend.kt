@@ -25,6 +25,7 @@ import kmphttp.asyncSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
@@ -52,7 +53,7 @@ class ReplicaBackend(
     private val engineManager: DynamicEngineManager,
     private val playerEngineFactory: () -> DynamicEnginePlayer,
     private val ffmpegBinaryPath: String? = null,
-    val coreVersion: String = "0.5.4",
+    val coreVersion: String = "0.6.0",
 ) {
     private val ffmpeg: Ffmpeg? = ffmpegBinaryPath?.takeIf { it.isNotBlank() }?.let(::Ffmpeg)
     private val json = Json { ignoreUnknownKeys = true }
@@ -344,13 +345,14 @@ class ReplicaBackend(
         current: List<YtFeedItem>,
         newTitle: String? = null,
     ): JsonObject {
-        val desiredCounts = desiredIds.groupingBy { it }.eachCount().toMutableMap()
+        val desiredCounts = desiredIds.groupingBy { it }.eachCount()
+        val unmatched = desiredCounts.toMutableMap()
 
         val removeActions = mutableListOf<JsonObject>()
         for (item in current) {
-            val left = desiredCounts[item.id] ?: 0
+            val left = unmatched[item.id] ?: 0
             if (left > 0) {
-                desiredCounts[item.id] = left - 1
+                unmatched[item.id] = left - 1
             } else {
                 val setId = requireNotNull(PlaylistRules.setVideoId(item.removeToken))
                 removeActions.add(buildJsonObject {
@@ -380,30 +382,22 @@ class ReplicaBackend(
             innertube.editPlaylistActions(playlistId, JsonArray(addActions), auth)
         }
 
-        var items = if (addActions.isEmpty() && removeActions.isEmpty()) current else fetchAllPlaylistItems(playlistId)
+        var items = if (addActions.isEmpty() && removeActions.isEmpty()) current else {
+            awaitPlaylistUpdate(playlistId) { items -> items.groupingBy { it.id }.eachCount() == desiredCounts }
+        }
         if (items.map { it.id } != desiredIds) {
-            val ordered = items.toMutableList()
-            check(ordered.size == desiredIds.size) { "?먭꺽 ?ъ깮紐⑸줉??怨??섍? ?ㅻ쫭?덈떎." }
-            val moves = buildJsonArray {
-                for ((index, id) in desiredIds.withIndex()) {
-                    if (ordered[index].id == id) continue
-                    val source = (index + 1 until ordered.size).first { ordered[it].id == id }
-                    val moved = ordered.removeAt(source)
-                    ordered.add(index, moved)
-                    add(buildJsonObject {
-                        put("action", "ACTION_MOVE_VIDEO_AFTER")
-                        put("setVideoId", requireNotNull(PlaylistRules.setVideoId(moved.removeToken)))
-                        if (index > 0) {
-                            put("movedSetVideoIdPredecessor", requireNotNull(PlaylistRules.setVideoId(ordered[index - 1].removeToken)))
-                        }
-                    })
+            val moves = PlaylistRules.movesAfter(items.map { it.id }, desiredIds).map { (entry, previous) ->
+                buildJsonObject {
+                    put("action", "ACTION_MOVE_VIDEO_AFTER")
+                    put("setVideoId", requireNotNull(PlaylistRules.setVideoId(items[entry].removeToken)))
+                    put("movedSetVideoIdPredecessor", requireNotNull(PlaylistRules.setVideoId(items[previous].removeToken)))
                 }
             }
             for (batch in moves.chunked(50)) {
                 innertube.editPlaylistActions(playlistId, JsonArray(batch), auth)
             }
-            items = fetchAllPlaylistItems(playlistId)
-            check(items.map { it.id } == desiredIds) { "?먭꺽 ?ъ깮紐⑸줉??怨??쒖꽌瑜??뺤씤?????놁뒿?덈떎." }
+            items = awaitPlaylistUpdate(playlistId) { items -> items.map { it.id } == desiredIds }
+            check(items.map { it.id } == desiredIds) { "원격 음악 재생목록의 곡 순서를 확인할 수 없습니다." }
         }
         newTitle?.takeIf { it.isNotBlank() }?.let {
             innertube.renamePlaylist(playlistId, it, auth)
@@ -412,6 +406,19 @@ class ReplicaBackend(
             put("synced", true)
             put("tracks", JsonArray(items.map { trackJson(it) }))
         }
+    }
+
+    private suspend fun awaitPlaylistUpdate(
+        playlistId: String,
+        matches: (List<YtFeedItem>) -> Boolean,
+    ): List<YtFeedItem> {
+        var items = fetchAllPlaylistItems(playlistId)
+        for (waitMs in listOf(300L, 800L)) {
+            if (matches(items)) break
+            delay(waitMs)
+            items = fetchAllPlaylistItems(playlistId)
+        }
+        return items
     }
 
     private suspend fun handleRecordHistoryTrack(req: JsonObject): JsonObject {

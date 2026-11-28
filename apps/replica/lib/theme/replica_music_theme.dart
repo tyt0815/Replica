@@ -3,6 +3,40 @@ import 'package:flutter/material.dart';
 const Color replicaAccentColor = Color(0xFFFF0035);
 const Color replicaLightNavBarColor = Color(0xFFF1F1F1);
 
+final _replicaPageTransitions = PageTransitionsTheme(
+  builders: {
+    for (final platform in TargetPlatform.values)
+      platform: const _ReplicaPageTransition(),
+  },
+);
+
+class _ReplicaPageTransition extends PageTransitionsBuilder {
+  const _ReplicaPageTransition();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 280);
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 240);
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => SlideTransition(
+    position: animation.drive(
+      Tween(
+        begin: const Offset(-1, 0),
+        end: Offset.zero,
+      ).chain(CurveTween(curve: Curves.easeOutCubic)),
+    ),
+    child: child,
+  );
+}
+
 ThemeData buildReplicaLightTheme() {
   const scheme = ColorScheme(
     brightness: Brightness.light,
@@ -27,6 +61,7 @@ ThemeData buildReplicaLightTheme() {
   );
   return ThemeData(
     useMaterial3: true,
+    pageTransitionsTheme: _replicaPageTransitions,
     colorScheme: scheme,
     scaffoldBackgroundColor: const Color(0xFFFFFFFF),
     dividerColor: const Color(0xFFE4E4E7),
@@ -105,6 +140,7 @@ ThemeData buildReplicaDarkTheme() {
   );
   return ThemeData(
     useMaterial3: true,
+    pageTransitionsTheme: _replicaPageTransitions,
     colorScheme: scheme,
     scaffoldBackgroundColor: const Color(0xFF09090B),
     dividerColor: const Color(0xFF27272A),

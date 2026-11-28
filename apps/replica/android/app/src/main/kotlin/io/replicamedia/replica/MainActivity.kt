@@ -47,6 +47,7 @@ class MainActivity : AudioServiceActivity() {
     private var playerBridge: YMusicPlayerBridge? = null
     private var updatePlugin: AppUpdatePlugin? = null
     private var accountChannel: MethodChannel? = null
+    private var videoChannel: MethodChannel? = null
     private var volumeChannel: MethodChannel? = null
     private var volumeObserver: ContentObserver? = null
     private var volumeReceiver: BroadcastReceiver? = null
@@ -148,6 +149,28 @@ class MainActivity : AudioServiceActivity() {
         playerBridge = YMusicPlayerBridge(applicationContext).also { it.attach(messenger) }
         updatePlugin = AppUpdatePlugin(applicationContext).also { it.attach(messenger) }
         ensureNotificationPermission()
+
+        videoChannel = MethodChannel(messenger, "io.replicamedia.replica/video").also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "open" -> {
+                        val videoId = call.argument<String>("video_id").orEmpty()
+                        if (!SearchVideoActivity.videoIdPattern.matches(videoId)) {
+                            result.error("invalid_video", "올바른 YouTube 영상 ID가 필요합니다.", null)
+                        } else {
+                            val intent = Intent(this, SearchVideoActivity::class.java)
+                                .putExtra(SearchVideoActivity.EXTRA_VIDEO_ID, videoId)
+                                .putExtra(SearchVideoActivity.EXTRA_TITLE, call.argument<String>("title"))
+                                .putExtra(SearchVideoActivity.EXTRA_ARTIST, call.argument<String>("artist"))
+                                .putExtra(SearchVideoActivity.EXTRA_DARK_MODE, call.argument<Boolean>("dark_mode") == true)
+                            startActivity(intent)
+                            result.success(null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
 
         accountChannel = MethodChannel(messenger, "com.tyt0815.replicamusic/account").also { ch ->
             ch.setMethodCallHandler { call, result ->
@@ -323,6 +346,8 @@ class MainActivity : AudioServiceActivity() {
         updatePlugin = null
         accountChannel?.setMethodCallHandler(null)
         accountChannel = null
+        videoChannel?.setMethodCallHandler(null)
+        videoChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 

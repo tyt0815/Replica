@@ -15,6 +15,17 @@ class _FakeMediaAdapters extends PlatformAdapters {
   final String dataDir;
   final List<String> sharedSubjects = [];
   final List<String> sharedPaths = [];
+  final List<(String, String, String)> openedVideos = [];
+
+  @override
+  Future<void> openSearchVideo(
+    String videoId,
+    String title, {
+    required String artist,
+    required bool darkMode,
+  }) async {
+    openedVideos.add((videoId, title, artist));
+  }
 
   @override
   Future<AppEnvironmentInfo> loadEnvironment({
@@ -293,9 +304,9 @@ void main() {
     expect(extractHistoryDeviceName('History.rm'), isNull);
   });
 
-  test('Backend bridge returns 0.5.4 and enforces .rm rules', () {
+  test('Backend bridge returns 0.6.0 and enforces .rm rules', () {
     final core = NativeReplicaMusicCore.openOrFallback();
-    expect(core.coreVersion, '0.5.4');
+    expect(core.coreVersion, '0.6.0');
     expect(core.isReplicaPlaylist('Chill.rm'), isTrue);
     expect(core.isReplicaPlaylist('Chill'), isFalse);
     expect(core.toRemotePlaylistTitle('Chill'), 'Chill.rm');
@@ -389,7 +400,7 @@ void main() {
       expect(find.text('재생'), findsOneWidget);
       expect(find.text('랜덤 재생'), findsOneWidget);
       expect(find.text('다운로드'), findsNothing);
-      expect(find.text('재생 목록 삭제'), findsNothing);
+      expect(find.text('음악 재생목록 삭제'), findsNothing);
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('header-more-button')), findsNothing);
@@ -411,6 +422,25 @@ void main() {
 
       expect(find.text('Morning Walk'), findsWidgets);
       expect(find.text('Morning Walk.rm'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('playlists-shelf-more-button')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('all-playlists-page')), findsOneWidget);
+      expect(find.text('음악 재생목록'), findsOneWidget);
+      expect(find.text('Morning Walk'), findsOneWidget);
+      expect(find.byKey(const Key('playlist-more-all-songs')), findsOneWidget);
+      await tester.tap(
+        find.byKey(const Key('all-playlists-item-__local_all_songs__')),
+      );
+      final detailTitle = find.byKey(const Key('detail-playlist-title'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 55));
+      final enteringDetailX = tester.getTopLeft(detailTitle).dx;
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(detailTitle).dx, greaterThan(enteringDetailX));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('all-playlists-page')), findsOneWidget);
     },
   );
 
@@ -458,6 +488,14 @@ void main() {
         const Offset(-400, 0),
         1000,
       );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('search-input')), findsNothing);
+      expect(
+        find.byKey(const Key('library-refresh-indicator')),
+        findsOneWidget,
+      );
+
+      await tester.drag(navBar, const Offset(120, 0));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('search-input')), findsOneWidget);
 
@@ -608,12 +646,30 @@ void main() {
         900,
       );
       await tester.pumpAndSettle();
+      expect(find.byKey(const Key('search-input')), findsOneWidget);
+      expect(
+        tester.getRect(find.byKey(const Key('unfolded-now-playing-pane'))),
+        swappedRightPane,
+      );
+
+      await tester.drag(
+        find.byKey(const Key('main-tab-pageview')),
+        const Offset(100, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('search-input')), findsOneWidget);
       final swappedBackLeftPane = tester.getRect(
         find.byKey(const Key('unfolded-now-playing-pane')),
       );
       expect(swappedBackLeftPane.left, 0);
 
       tester.view.physicalSize = foldStates.first.$2;
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('search-input')), findsOneWidget);
+      await tester.drag(
+        find.byKey(const Key('bottom-nav-bar')),
+        const Offset(-120, 0),
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('playlist-tile-all-songs')));
@@ -805,7 +861,13 @@ void main() {
         findsNothing,
       );
       expect(find.byKey(const Key('now-playing-queue-header')), findsOneWidget);
-      expect(find.text('현재 재생목록'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('now-playing-sheet')),
+          matching: find.text('음악 재생목록'),
+        ),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const Key('now-playing-queue-summary')),
         findsOneWidget,
@@ -901,6 +963,14 @@ void main() {
       );
       expect(find.byKey(const Key('playlist-tile-history')), findsOneWidget);
       expect(
+        find.descendant(
+          of: find.byKey(const Key('library-history-shelf')),
+          matching: find.text('음악 기록'),
+        ),
+        findsWidgets,
+      );
+      expect(find.textContaining(RegExp(r'(?:이|다른) 기기|\d+\s*곡')), findsNothing);
+      expect(
         find.byKey(const Key('playlist-tile-history-PL_HISTORY_OTHER')),
         findsOneWidget,
       );
@@ -928,8 +998,15 @@ void main() {
       expect(currentDeviceX, lessThan(otherDeviceX));
 
       await tester.tap(find.byKey(const Key('history-shelf-more-button')));
+      final historiesPage = find.byKey(const Key('all-histories-page'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final enteringHistoryX = tester.getTopLeft(historiesPage).dx;
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('all-histories-dialog')), findsOneWidget);
+      final historyX = tester.getTopLeft(historiesPage).dx;
+      expect(historyX, greaterThan(enteringHistoryX));
+      expect(historiesPage, findsOneWidget);
+      expect(find.text('기록'), findsOneWidget);
       expect(
         find.byKey(const Key('all-histories-item-PL_HISTORY_REMOTE')),
         findsOneWidget,
@@ -938,7 +1015,24 @@ void main() {
         find.byKey(const Key('all-histories-item-PL_HISTORY_OTHER')),
         findsOneWidget,
       );
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(const Key('all-histories-item-PL_HISTORY_REMOTE')),
+            )
+            .dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(const Key('all-histories-item-PL_HISTORY_OTHER')),
+              )
+              .dy,
+        ),
+      );
       await tester.binding.handlePopRoute();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.getTopLeft(historiesPage).dx, lessThan(historyX));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('playlist-tile-all-songs')));
@@ -1022,7 +1116,7 @@ void main() {
     await tester.tap(find.byKey(const Key('track-more-track-3')));
     await tester.pumpAndSettle();
     expect(find.text('다음에 재생'), findsOneWidget);
-    expect(find.text('현재 재생목록에 추가'), findsOneWidget);
+    expect(find.text('현재 음악 재생목록에 추가'), findsOneWidget);
     await tester.tap(find.text('다음에 재생'));
     await tester.pumpAndSettle();
 
@@ -1033,7 +1127,7 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('track-more-track-1')));
     await tester.tap(find.byKey(const Key('track-more-track-1')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('현재 재생목록에 추가'));
+    await tester.tap(find.text('현재 음악 재생목록에 추가'));
     await tester.pumpAndSettle();
 
     await handler.skipToNext();
@@ -1046,7 +1140,67 @@ void main() {
   });
 
   testWidgets(
-    'Tapping undownloaded track stops playback and starts the selected song after saving',
+    'Search plays videos without downloading or writing to music history',
+    (tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(360, 840);
+      addTearDown(tester.view.reset);
+      final adapters = _FakeLoggedInAdapters();
+      final core = _FakeSearchVideoCore();
+      final engine = _FakeAudioEngine();
+      final handler = ReplicaAudioServiceHandler();
+
+      await tester.pumpWidget(
+        ReplicaMusicApp(
+          core: core,
+          adapters: adapters,
+          audioEngine: engine,
+          audioServiceHandler: handler,
+          fileExistsOverride: (_) => true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('playlist-tile-all-songs')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('First Track'));
+      await tester.pumpAndSettle();
+      expect(handler.playbackState.value.playing, isTrue);
+      expect(core.historyRequests.map((r) => r['video_id']), ['track-1']);
+
+      await tester.tap(find.byIcon(Icons.search_outlined));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('search-input')), 'demo');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Search Video'));
+      await tester.pumpAndSettle();
+      expect(adapters.openedVideos, [
+        ('video123456', 'Search Video', 'Artist'),
+      ]);
+      expect(handler.playbackState.value.playing, isFalse);
+      expect(engine.loadedPaths.single, contains('track-1.m4a'));
+
+      await tester.tap(find.byKey(const Key('track-more-track-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('영상 재생'));
+      await tester.pumpAndSettle();
+      expect(adapters.openedVideos.last, (
+        'track-1',
+        'Saved Search Video',
+        'Artist',
+      ));
+      expect(core.historyRequests.map((r) => r['video_id']), ['track-1']);
+      expect(core.downloadRequests, isEmpty);
+      expect(find.byKey(const Key('track-tile-video123456')), findsNothing);
+      await handler.play();
+      await tester.pumpAndSettle();
+      expect(handler.playbackState.value.playing, isTrue);
+      expect(engine.loadedPaths, hasLength(1));
+    },
+  );
+
+  testWidgets(
+    'Advancing to an undownloaded music queue item starts it after saving',
     (tester) async {
       tester.view.devicePixelRatio = 1.0;
       tester.view.physicalSize = const Size(360, 840);
@@ -1089,7 +1243,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Undownloaded Song'), findsOneWidget);
-      await tester.tap(find.text('Undownloaded Song'));
+      await tester.tap(find.byKey(const Key('track-more-new-track-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('다음에 재생'));
+      await tester.pumpAndSettle();
+      unawaited(handler.skipToNext());
       await tester.pump();
 
       expect(engine.loadedPaths.single, contains('track-1.m4a'));
@@ -1205,7 +1363,7 @@ void main() {
         find.byKey(const Key('playlist-edit-add-to-playlist')),
         findsOneWidget,
       );
-      expect(find.text('재생목록에 추가'), findsOneWidget);
+      expect(find.text('음악 재생목록에 추가'), findsOneWidget);
       await tester.tap(selectAll);
       await tester.pumpAndSettle();
       expect(
@@ -1434,13 +1592,41 @@ void main() {
       await tester.enterText(find.byKey(const Key('search-input')), 'demo');
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Undownloaded Song'));
+      await tester.tap(find.byKey(const Key('track-more-new-track-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('다음에 재생'));
       await tester.pumpAndSettle();
 
       expect(core.downloadRequests.length, 1);
       expect(core.downloadRequests.last['format'], 'm4a');
     },
   );
+}
+
+class _FakeSearchVideoCore extends _FakeHistoryCore {
+  final List<Map<String, dynamic>> downloadRequests = [];
+
+  @override
+  Future<Map<String, dynamic>> invoke(Map<String, dynamic> request) async {
+    if (request['op'] == 'search') {
+      return {
+        'tracks': [
+          {
+            'video_id': 'video123456',
+            'title': 'Search Video',
+            'artist': 'Artist',
+          },
+          {
+            'video_id': 'track-1',
+            'title': 'Saved Search Video',
+            'artist': 'Artist',
+          },
+        ],
+      };
+    }
+    if (request['op'] == 'download_track') downloadRequests.add(request);
+    return super.invoke(request);
+  }
 }
 
 class _FakeDownloadFlowCore extends _FakeMediaCore {

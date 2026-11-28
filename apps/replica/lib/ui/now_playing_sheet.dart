@@ -446,7 +446,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                             children: [
                               const Expanded(
                                 child: Text(
-                                  '현재 재생목록',
+                                  '음악 재생목록',
                                   key: Key('now-playing-queue-header'),
                                   style: TextStyle(
                                     color: Colors.white,
@@ -766,7 +766,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     final repeatTooltip = switch (_repeatMode) {
       PlaybackRepeatMode.off => '반복 없음',
       PlaybackRepeatMode.one => '한 곡 반복',
-      PlaybackRepeatMode.all => '현재 재생목록 반복',
+      PlaybackRepeatMode.all => '음악 재생목록 반복',
     };
 
     return Column(

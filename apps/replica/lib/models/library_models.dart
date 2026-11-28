@@ -169,7 +169,7 @@ class PlaylistItem {
       id: id,
       remoteTitle: remoteTitle,
       owner: 'YouTube',
-      description: (json['subtitle'] as String?) ?? 'YouTube 재생목록',
+      description: (json['subtitle'] as String?) ?? 'YouTube 음악 재생목록',
       thumbnail: (json['thumbnail'] as String?) ?? '',
       coverColor: colorFromId(id),
       tracks: const [],

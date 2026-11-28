@@ -17,6 +17,23 @@ object PlaylistRules {
         return "$REMOVE_TOKEN_PREFIX:$playlistId:$membershipId"
     }
 
+    fun movesAfter(currentIds: List<String>, desiredIds: List<String>): List<Pair<Int, Int>> {
+        check(currentIds.size == desiredIds.size) { "원격 음악 재생목록의 곡 수가 다릅니다." }
+        val entriesById = currentIds.indices.groupBy { currentIds[it] }.mapValues { ArrayDeque(it.value) }
+        val desired = desiredIds.map { id ->
+            checkNotNull(entriesById[id]?.removeFirstOrNull()) { "원격 음악 재생목록의 곡 구성이 다릅니다." }
+        }
+        val order = currentIds.indices.toMutableList()
+        return buildList {
+            for ((previous, entry) in desired.zipWithNext()) {
+                if (order.indexOf(entry) == order.indexOf(previous) + 1) continue
+                order.remove(entry)
+                order.add(order.indexOf(previous) + 1, entry)
+                add(entry to previous)
+            }
+        }
+    }
+
     fun isReplicaPlaylist(rawTitle: String): Boolean {
         val trimmed = rawTitle.trim()
         return trimmed.endsWith(SUFFIX) && trimmed.length > SUFFIX.length

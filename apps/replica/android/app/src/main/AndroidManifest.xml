@@ -41,7 +41,15 @@
         <activity
             android:name=".WebLoginActivity"
             android:exported="false"
+            android:theme="@style/WebLoginTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|density|uiMode" />
+
+        <activity
+            android:name=".SearchVideoActivity"
+            android:exported="false"
+            android:theme="@style/SearchVideoTheme"
+            android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|screenLayout|density"
+            android:hardwareAccelerated="true" />
 
         <service
             android:name="com.ryanheise.audioservice.AudioService"

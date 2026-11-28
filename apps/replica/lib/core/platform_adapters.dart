@@ -28,6 +28,7 @@ class PlatformAdapters {
       'com.tyt0815.replicamusic/account',
     ),
     this.volumeChannel = const MethodChannel('com.tyt0815.replicamusic/volume'),
+    this.videoChannel = const MethodChannel('io.replicamedia.replica/video'),
   }) {
     if (Platform.isAndroid) {
       volumeChannel.setMethodCallHandler((call) async {
@@ -42,6 +43,7 @@ class PlatformAdapters {
   final MethodChannel updateChannel;
   final MethodChannel accountChannel;
   final MethodChannel volumeChannel;
+  final MethodChannel videoChannel;
   final StreamController<double> _volumeChanges =
       StreamController<double>.broadcast();
   double _fallbackVolume = 0.7;
@@ -207,6 +209,23 @@ class PlatformAdapters {
     if (Platform.isAndroid) {
       await updateChannel.invokeMethod<bool>('open_url', {'url': url});
     }
+  }
+
+  Future<void> openSearchVideo(
+    String videoId,
+    String title, {
+    required String artist,
+    required bool darkMode,
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('영상 스트리밍은 Android에서 지원합니다.');
+    }
+    await videoChannel.invokeMethod<void>('open', {
+      'video_id': videoId,
+      'title': title,
+      'artist': artist,
+      'dark_mode': darkMode,
+    });
   }
 
   Future<bool> shareTextFile({

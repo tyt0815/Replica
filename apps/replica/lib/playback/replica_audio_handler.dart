@@ -979,7 +979,7 @@ class ReplicaPlaybackController {
     await playTrack(_queue[prevIndex], queue: _queue);
   }
 
-  Future<void> stop() async {
+  void _cancelPendingPlayback() {
     _requestSeq++;
     _prefetchTimer?.cancel();
     final prefetchId = _prefetchingTrackId;
@@ -992,6 +992,21 @@ class ReplicaPlaybackController {
       downloadManager.cancelPlaybackDownload(loadingId);
       _loadingTrackId = null;
     }
+  }
+
+  Future<void> pauseForVideo() async {
+    _cancelPendingPlayback();
+    if (_activeTrack == null) return;
+    if (_isLoading) {
+      await _engine.stop();
+      _isLoading = false;
+      _hasLoadedCurrentTrack = false;
+    }
+    await pause();
+  }
+
+  Future<void> stop() async {
+    _cancelPendingPlayback();
     await _engine.stop();
     _isPlaying = false;
     _isLoading = false;
@@ -1010,18 +1025,7 @@ class ReplicaPlaybackController {
     }
 
     if (wasActive) {
-      _requestSeq++;
-      _prefetchTimer?.cancel();
-      final prefetchId = _prefetchingTrackId;
-      if (prefetchId != null) {
-        downloadManager.cancelPlaybackDownload(prefetchId);
-        _prefetchingTrackId = null;
-      }
-      final loadingId = _loadingTrackId;
-      if (loadingId != null) {
-        downloadManager.cancelPlaybackDownload(loadingId);
-        _loadingTrackId = null;
-      }
+      _cancelPendingPlayback();
       await _engine.stop();
       _isPlaying = false;
       _isLoading = false;

@@ -15,4 +15,19 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+
+    <style name="ReplicaWindowAnimation" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/screen_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/screen_hold</item>
+        <item name="android:activityCloseEnterAnimation">@anim/screen_hold</item>
+        <item name="android:activityCloseExitAnimation">@anim/screen_exit</item>
+    </style>
+
+    <style name="WebLoginTheme" parent="@android:style/Theme.DeviceDefault">
+        <item name="android:windowAnimationStyle">@style/ReplicaWindowAnimation</item>
+    </style>
+
+    <style name="SearchVideoTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowAnimationStyle">@style/ReplicaWindowAnimation</item>
+    </style>
 </resources>
