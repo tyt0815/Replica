@@ -4570,7 +4570,9 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                                             ],
                                             _slideDock(
                                               _isEditingPlaylist
-                                                  ? _buildPlaylistEditDock()
+                                                  ? _buildPlaylistEditDock(
+                                                      context,
+                                                    )
                                                   : _buildBottomNavStrip(
                                                       context,
                                                     ),
@@ -4648,7 +4650,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                                         ],
                                         _slideDock(
                                           _isEditingPlaylist
-                                              ? _buildPlaylistEditDock()
+                                              ? _buildPlaylistEditDock(context)
                                               : _buildBottomNavStrip(context),
                                         ),
                                       ],
@@ -4695,7 +4697,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                                         ],
                                         _slideDock(
                                           _isEditingPlaylist
-                                              ? _buildPlaylistEditDock()
+                                              ? _buildPlaylistEditDock(context)
                                               : Column(
                                                   key: const Key(
                                                     'workspace-playback-and-tabs',
@@ -4727,7 +4729,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                                   key: const Key(
                                     'fullscreen-now-playing-overlay',
                                   ),
-                                  translation: Offset(nowPlayingT - 1.0, 0),
+                                  translation: Offset(0, 1.0 - nowPlayingT),
                                   child: RepaintBoundary(
                                     child: _buildNowPlayingWidget(context),
                                   ),
@@ -4789,86 +4791,96 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     }
   }
 
+  Color _dockForeground(ThemeData theme) => theme.brightness == Brightness.dark
+      ? Colors.white.withValues(alpha: 0.9)
+      : theme.colorScheme.onSurface;
+
+  Widget _buildDockShell({
+    required Key key,
+    required Widget circle,
+    required Widget capsule,
+  }) => SizedBox(
+    key: key,
+    height: _dockHeight,
+    child: Row(
+      children: [
+        circle,
+        const SizedBox(width: 10),
+        Expanded(
+          child: _FloatingDockCapsule(
+            height: _dockHeight,
+            padding: const EdgeInsets.all(4),
+            child: capsule,
+          ),
+        ),
+      ],
+    ),
+  );
+
   Widget _buildBottomNavStrip(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final activePillColor = isDark
         ? Colors.white.withValues(alpha: 0.14)
         : Colors.black.withValues(alpha: 0.07);
-    final inactiveColor = isDark
-        ? Colors.white.withValues(alpha: 0.9)
-        : theme.colorScheme.onSurface;
+    final inactiveColor = _dockForeground(theme);
     final settingsSelected = _tabIndex == 0;
 
     return _HorizontalSwipeArea(
       onSwipe: _swipeDockTab,
-      child: SizedBox(
+      child: _buildDockShell(
         key: const Key('bottom-nav-bar'),
-        height: _dockHeight,
-        child: Row(
-          children: [
-            _buildSettingsCircleDock(
-              selected: settingsSelected,
-              iconColor: settingsSelected ? replicaAccentColor : inactiveColor,
-              activePillColor: activePillColor,
-              isDark: isDark,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _FloatingDockCapsule(
-                height: _dockHeight,
-                padding: const EdgeInsets.all(4),
-                child: ValueListenableBuilder<double>(
-                  valueListenable: _dockPagePosition,
-                  builder: (context, page, _) {
-                    final clampedPage = page.clamp(0.0, 1.0);
-                    final alignX = -1.0 + clampedPage * 2.0;
-                    final showPill = _tabIndex != 0;
-                    return Stack(
-                      children: [
-                        if (showPill)
-                          Positioned.fill(
-                            child: Align(
-                              alignment: Alignment(alignX, 0),
-                              child: FractionallySizedBox(
-                                widthFactor: 0.5,
-                                heightFactor: 1,
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: activePillColor,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                ),
-                              ),
-                            ),
+        circle: _buildSettingsCircleDock(
+          selected: settingsSelected,
+          iconColor: settingsSelected ? replicaAccentColor : inactiveColor,
+        ),
+        capsule: ValueListenableBuilder<double>(
+          valueListenable: _dockPagePosition,
+          builder: (context, page, _) {
+            final clampedPage = page.clamp(0.0, 1.0);
+            final alignX = -1.0 + clampedPage * 2.0;
+            final showPill = _tabIndex != 0;
+            return Stack(
+              children: [
+                if (showPill)
+                  Positioned.fill(
+                    child: Align(
+                      alignment: Alignment(alignX, 0),
+                      child: FractionallySizedBox(
+                        widthFactor: 0.5,
+                        heightFactor: 1,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: activePillColor,
+                            borderRadius: BorderRadius.circular(999),
                           ),
-                        Row(
-                          children: [
-                            _buildNavIconItem(
-                              index: 1,
-                              page: showPill ? clampedPage + 1.0 : -1.0,
-                              inactiveColor: inactiveColor,
-                              icon: Icons.library_music_outlined,
-                              selectedIcon: Icons.library_music_rounded,
-                              label: '보관함',
-                            ),
-                            _buildNavIconItem(
-                              index: 2,
-                              page: showPill ? clampedPage + 1.0 : -1.0,
-                              inactiveColor: inactiveColor,
-                              icon: Icons.search_outlined,
-                              selectedIcon: Icons.search_rounded,
-                              label: '검색',
-                            ),
-                          ],
                         ),
-                      ],
-                    );
-                  },
+                      ),
+                    ),
+                  ),
+                Row(
+                  children: [
+                    _buildNavIconItem(
+                      index: 1,
+                      page: showPill ? clampedPage + 1.0 : -1.0,
+                      inactiveColor: inactiveColor,
+                      icon: Icons.library_music_outlined,
+                      selectedIcon: Icons.library_music_rounded,
+                      label: '보관함',
+                    ),
+                    _buildNavIconItem(
+                      index: 2,
+                      page: showPill ? clampedPage + 1.0 : -1.0,
+                      inactiveColor: inactiveColor,
+                      icon: Icons.search_outlined,
+                      selectedIcon: Icons.search_rounded,
+                      label: '검색',
+                    ),
+                  ],
                 ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -4877,8 +4889,6 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
   Widget _buildSettingsCircleDock({
     required bool selected,
     required Color iconColor,
-    required Color activePillColor,
-    required bool isDark,
   }) {
     final avatarUrl = _accountAvatarUrl?.trim() ?? '';
     final hasAvatar = _webSession != null && avatarUrl.startsWith('https://');
@@ -4935,46 +4945,53 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     required IconData icon,
     required IconData selectedIcon,
     required String label,
-    Widget Function(bool selected, Color color)? customIconBuilder,
   }) {
     final focus = (1.0 - (page - index).abs()).clamp(0.0, 1.0);
     final selected = focus >= 0.5;
-    final iconColor = Color.lerp(inactiveColor, replicaAccentColor, focus)!;
     return Expanded(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(999),
-          onTap: () => _selectTab(index),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (customIconBuilder != null)
-                customIconBuilder(selected, iconColor)
-              else
-                Icon(
-                  selected ? selectedIcon : icon,
-                  size: 24,
-                  color: iconColor,
-                ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1.1,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: iconColor,
-                ),
-              ),
-            ],
-          ),
-        ),
+      child: _buildDockIconButton(
+        icon: selected ? selectedIcon : icon,
+        label: label,
+        color: Color.lerp(inactiveColor, replicaAccentColor, focus)!,
+        selected: selected,
+        onTap: () => _selectTab(index),
       ),
     );
   }
+
+  Widget _buildDockIconButton({
+    Key? key,
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback? onTap,
+    bool selected = false,
+  }) => Material(
+    color: Colors.transparent,
+    child: InkWell(
+      key: key,
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 24, color: color),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.1,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget _buildTabHeader(
     BuildContext context,
@@ -6574,110 +6591,80 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     }
   }
 
-  Widget _buildPlaylistEditDock() {
+  Widget _buildPlaylistEditDock(BuildContext context) {
     final hasSelection =
         _selectedEditingTracks.isNotEmpty && !_isSavingPlaylistEdit;
     final canSelectAll = _editingTracks.isNotEmpty && !_isSavingPlaylistEdit;
     final allSelected = _allEditingTracksSelected;
     final theme = Theme.of(context);
-    final selectColor = !canSelectAll
-        ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4)
-        : (allSelected ? replicaAccentColor : theme.colorScheme.onSurface);
-    return SizedBox(
+    final activeColor = _dockForeground(theme);
+    final disabledColor = theme.colorScheme.onSurfaceVariant.withValues(
+      alpha: 0.4,
+    );
+    final actionColor = hasSelection ? activeColor : disabledColor;
+
+    return _buildDockShell(
       key: const Key('playlist-edit-dock'),
-      height: _dockHeight,
-      child: Row(
+      circle: Semantics(
+        container: true,
+        label: '전체 선택',
+        checked: allSelected,
+        child: _DockCircleSurface(
+          size: _dockHeight,
+          accentActive: allSelected,
+          child: SizedBox.expand(
+            child: _buildDockIconButton(
+              key: const Key('detail-edit-select-all'),
+              icon: allSelected
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              label: '전체',
+              color: allSelected
+                  ? Colors.white
+                  : (canSelectAll ? activeColor : disabledColor),
+              selected: allSelected,
+              onTap: canSelectAll ? _toggleAllEditingTracks : null,
+            ),
+          ),
+        ),
+      ),
+      capsule: Row(
         children: [
-          Semantics(
-            container: true,
-            label: '전체 선택',
-            checked: allSelected,
-            child: _DockCircleSurface(
-              size: _dockHeight,
-              child: Material(
-                color: Colors.transparent,
-                shape: const CircleBorder(),
-                child: InkWell(
-                  key: const Key('detail-edit-select-all'),
-                  customBorder: const CircleBorder(),
-                  onTap: canSelectAll ? _toggleAllEditingTracks : null,
-                  child: SizedBox(
-                    width: _dockHeight,
-                    height: _dockHeight,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          allSelected
-                              ? Icons.check_circle_rounded
-                              : Icons.radio_button_unchecked_rounded,
-                          size: 22,
-                          color: selectColor,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '전체',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            height: 1.1,
-                            color: selectColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+          Expanded(
+            child: Tooltip(
+              message: '음악 재생목록에 추가',
+              child: _buildDockIconButton(
+                key: const Key('playlist-edit-add-to-playlist'),
+                icon: Icons.playlist_add_rounded,
+                label: '추가',
+                color: actionColor,
+                onTap: hasSelection
+                    ? () {
+                        final selected = _editingTracks
+                            .where(_selectedEditingTracks.contains)
+                            .toList(growable: false);
+                        unawaited(_openAddTracksToPlaylistDialog(selected));
+                      }
+                    : null,
               ),
             ),
           ),
-          const SizedBox(width: 10),
           Expanded(
-            child: _FloatingDockCapsule(
-              height: _dockHeight,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Flexible(
-                    child: TextButton.icon(
-                      key: const Key('playlist-edit-add-to-playlist'),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                      ),
-                      onPressed: hasSelection
-                          ? () {
-                              final selected = _editingTracks
-                                  .where(_selectedEditingTracks.contains)
-                                  .toList(growable: false);
-                              unawaited(
-                                _openAddTracksToPlaylistDialog(selected),
-                              );
-                            }
-                          : null,
-                      icon: const Icon(Icons.playlist_add_rounded),
-                      label: const Text(
-                        '음악 재생목록에 추가',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                  TextButton.icon(
-                    key: const Key('playlist-edit-delete'),
-                    onPressed: hasSelection
-                        ? () {
-                            setState(() {
-                              _editingTracks.removeWhere(
-                                _selectedEditingTracks.contains,
-                              );
-                              _selectedEditingTracks.clear();
-                            });
-                          }
-                        : null,
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    label: const Text('삭제'),
-                  ),
-                ],
-              ),
+            child: _buildDockIconButton(
+              key: const Key('playlist-edit-delete'),
+              icon: Icons.delete_outline_rounded,
+              label: '삭제',
+              color: actionColor,
+              onTap: hasSelection
+                  ? () {
+                      setState(() {
+                        _editingTracks.removeWhere(
+                          _selectedEditingTracks.contains,
+                        );
+                        _selectedEditingTracks.clear();
+                      });
+                    }
+                  : null,
             ),
           ),
         ],

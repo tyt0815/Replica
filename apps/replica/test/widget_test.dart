@@ -304,9 +304,9 @@ void main() {
     expect(extractHistoryDeviceName('History.rm'), isNull);
   });
 
-  test('Backend bridge returns 0.6.0 and enforces .rm rules', () {
+  test('Backend bridge returns 0.6.1 and enforces .rm rules', () {
     final core = NativeReplicaMusicCore.openOrFallback();
-    expect(core.coreVersion, '0.6.0');
+    expect(core.coreVersion, '0.6.1');
     expect(core.isReplicaPlaylist('Chill.rm'), isTrue);
     expect(core.isReplicaPlaylist('Chill'), isFalse);
     expect(core.toRemotePlaylistTitle('Chill'), 'Chill.rm');
@@ -437,7 +437,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 55));
       final enteringDetailX = tester.getTopLeft(detailTitle).dx;
       await tester.pumpAndSettle();
-      expect(tester.getTopLeft(detailTitle).dx, greaterThan(enteringDetailX));
+      expect(tester.getTopLeft(detailTitle).dx, lessThan(enteringDetailX));
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('all-playlists-page')), findsOneWidget);
@@ -715,16 +715,21 @@ void main() {
           } else {
             expect(playerRect.bottom, lessThan(navRect.top));
           }
+          final cover = find.byKey(const Key('now-playing-cover'));
           await tester.tap(find.byKey(const Key('mini-player-open-sheet')));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(tester.getTopLeft(cover).dy, greaterThan(0));
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
-          final coverRect = tester.getRect(
-            find.byKey(const Key('now-playing-cover')),
-          );
+          final coverRect = tester.getRect(cover);
           expect(coverRect.width, closeTo(coverRect.height, 0.5));
           expect(coverRect.top, closeTo(0.0, 0.5));
           expect(coverRect.left, closeTo(0.0, 0.5));
           await tester.binding.handlePopRoute();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(tester.getTopLeft(cover).dy, greaterThan(0));
           await tester.pumpAndSettle();
         }
         expect(find.byType(NavigationRail), findsNothing);
@@ -1004,7 +1009,7 @@ void main() {
       final enteringHistoryX = tester.getTopLeft(historiesPage).dx;
       await tester.pumpAndSettle();
       final historyX = tester.getTopLeft(historiesPage).dx;
-      expect(historyX, greaterThan(enteringHistoryX));
+      expect(historyX, lessThan(enteringHistoryX));
       expect(historiesPage, findsOneWidget);
       expect(find.text('기록'), findsOneWidget);
       expect(
@@ -1032,7 +1037,7 @@ void main() {
       await tester.binding.handlePopRoute();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(tester.getTopLeft(historiesPage).dx, lessThan(historyX));
+      expect(tester.getTopLeft(historiesPage).dx, greaterThan(historyX));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('playlist-tile-all-songs')));
@@ -1326,6 +1331,9 @@ void main() {
       expect(find.byKey(const Key('track-tile-new-track-1')), findsOneWidget);
       final editTrackKey = find.byKey(const Key('edit-select-new-track-1'));
       final selectedTrack = find.byKey(const Key('track-tile-new-track-1'));
+      final tabDockSize = tester.getSize(
+        find.byKey(const Key('bottom-nav-bar')),
+      );
       await tester.ensureVisible(selectedTrack);
       await tester.pumpAndSettle();
       await tester.longPress(selectedTrack);
@@ -1343,7 +1351,7 @@ void main() {
       expect(find.byIcon(Icons.drag_handle_rounded), findsNothing);
 
       final editDock = find.byKey(const Key('playlist-edit-dock'));
-      expect(tester.getSize(editDock).height, 62);
+      expect(tester.getSize(editDock), tabDockSize);
       final selectAll = find.byKey(const Key('detail-edit-select-all'));
       final selectAllSize = tester.getSize(selectAll);
       expect(selectAllSize.width, closeTo(60.2, 2.0));
@@ -1359,11 +1367,14 @@ void main() {
         ),
         findsOneWidget,
       );
+      final addAction = find.byKey(const Key('playlist-edit-add-to-playlist'));
+      final deleteAction = find.byKey(const Key('playlist-edit-delete'));
+      expect(tester.getSize(addAction), tester.getSize(deleteAction));
+      expect(find.byTooltip('음악 재생목록에 추가'), findsOneWidget);
       expect(
-        find.byKey(const Key('playlist-edit-add-to-playlist')),
-        findsOneWidget,
+        tester.getCenter(find.byIcon(Icons.playlist_add_rounded)).dy,
+        lessThan(tester.getCenter(find.text('추가')).dy),
       );
-      expect(find.text('음악 재생목록에 추가'), findsOneWidget);
       await tester.tap(selectAll);
       await tester.pumpAndSettle();
       expect(
@@ -1375,6 +1386,8 @@ void main() {
       );
       await tester.tap(selectAll);
       await tester.pumpAndSettle();
+      expect(tester.widget<InkWell>(addAction).onTap, isNull);
+      expect(tester.widget<InkWell>(deleteAction).onTap, isNull);
       await tester.ensureVisible(editTrackKey);
       await tester.pumpAndSettle();
       await tester.tap(editTrackKey);
