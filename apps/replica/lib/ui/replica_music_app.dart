@@ -6379,23 +6379,354 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
     );
   }
 
+  Future<void> _openAddTracksToPlaylistDialog(List<TrackItem> tracks) async {
+    if (tracks.isEmpty) {
+      return;
+    }
+    final gen = _sessionGeneration;
+    List<PlaylistItem> readEligiblePlaylists() => _rawPlaylists
+        .where((p) => !isHistoryRemoteTitle(p.remoteTitle))
+        .toList(growable: false);
+
+    var playlists = readEligiblePlaylists();
+    final selectedIds = <String>{};
+
+    final confirmed = await _showPaneDialog<bool>(
+      fromNowPlaying: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final theme = Theme.of(context);
+            final maxHeight = (MediaQuery.of(context).size.height * 0.62).clamp(
+              260.0,
+              460.0,
+            );
+            return Dialog(
+              key: const Key('add-tracks-to-playlist-dialog'),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 24,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 420,
+                  maxHeight: maxHeight,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 10, 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '재생목록에 추가 (${tracks.length}곡)',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '닫기',
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(false),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Flexible(
+                      child: playlists.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 28,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '저장할 재생목록이 없습니다.\n아래에서 새 재생목록을 만들어 주세요.',
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              itemCount: playlists.length,
+                              itemBuilder: (_, index) {
+                                final pl = playlists[index];
+                                final checked = selectedIds.contains(pl.id);
+                                return InkWell(
+                                  key: Key('playlist-check-row-${pl.id}'),
+                                  onTap: () {
+                                    setDialogState(() {
+                                      if (!selectedIds.remove(pl.id)) {
+                                        selectedIds.add(pl.id);
+                                      }
+                                    });
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _playlistSelectionIcon(
+                                          context,
+                                          checked,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _displayTitleForPlaylist(pl),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.bodyLarge
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                          ),
+                                        ),
+                                        Text(
+                                          '${pl.tracks.length}곡',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: theme
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      child: Material(
+                        color: theme.colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(14),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () async {
+                            final beforeIds = playlists
+                                .map((p) => p.id)
+                                .toSet();
+                            await _showCreatePlaylistDialog(context);
+                            if (!context.mounted) return;
+                            final refreshed = readEligiblePlaylists();
+                            final newlyCreated = refreshed
+                                .where((p) => !beforeIds.contains(p.id))
+                                .toList();
+                            setDialogState(() {
+                              playlists = refreshed;
+                              for (final created in newlyCreated) {
+                                selectedIds.add(created.id);
+                              }
+                            });
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.add_rounded,
+                                  size: 20,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '새 재생목록',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(false),
+                            child: const Text('취소'),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton(
+                            key: const Key('save-dialog-confirm'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: replicaAccentColor,
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: selectedIds.isEmpty
+                                ? null
+                                : () => Navigator.of(dialogContext).pop(true),
+                            child: const Text('추가'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true ||
+        selectedIds.isEmpty ||
+        !mounted ||
+        gen != _sessionGeneration) {
+      return;
+    }
+
+    final byId = {for (final pl in readEligiblePlaylists()) pl.id: pl};
+    final addedPerPlaylist = <String, List<TrackItem>>{};
+    final versionUpdates = <String, ({int ts, String title})>{};
+
+    for (final pid in selectedIds) {
+      final pl = byId[pid];
+      if (pl == null) continue;
+      final existingIds = pl.tracks.map((t) => t.id).toSet();
+      final toAdd = tracks
+          .where((t) => existingIds.add(t.id))
+          .toList(growable: false);
+      if (toAdd.isEmpty) continue;
+      addedPerPlaylist[pid] = toAdd;
+      final newTs = nextPlaylistTimestamp(pl.updatedAt);
+      versionUpdates[pid] = (
+        ts: newTs,
+        title: buildVersionedRemoteTitle(pl.remoteTitle, newTs),
+      );
+    }
+
+    if (addedPerPlaylist.isEmpty) {
+      _showSnack('선택한 곡이 이미 재생목록에 있습니다.');
+      return;
+    }
+
+    setState(() {
+      _rawPlaylists = _rawPlaylists
+          .map((item) {
+            final toAdd = addedPerPlaylist[item.id];
+            if (toAdd == null) return item;
+            final bumped = versionUpdates[item.id];
+            return item.copyWith(
+              remoteTitle: bumped?.title ?? item.remoteTitle,
+              updatedAt: bumped?.ts ?? item.updatedAt,
+              tracks: [...item.tracks, ...toAdd],
+              thumbnail: item.thumbnail.isNotEmpty
+                  ? item.thumbnail
+                  : toAdd.first.thumbnail,
+            );
+          })
+          .toList(growable: false);
+    });
+    await _saveCachedPlaylists();
+    if (mounted) {
+      _showSnack('재생목록 ${addedPerPlaylist.length}곳에 추가했습니다.');
+    }
+
+    for (final entry in addedPerPlaylist.entries) {
+      final pl = byId[entry.key];
+      if (pl == null || !pl.isRemote || _webSession == null) continue;
+      final bumped = versionUpdates[entry.key];
+      unawaited(() async {
+        _beginPlaylistSync(pl.id);
+        try {
+          for (var i = 0; i < entry.value.length; i++) {
+            final track = entry.value[i];
+            final isLast = i == entry.value.length - 1;
+            await widget.core.invoke({
+              'op': 'add_to_playlist',
+              'playlist_id': pl.id,
+              'video_id': track.id,
+              if (isLast && bumped != null) 'new_remote_title': bumped.title,
+              'session': _webSession,
+            });
+          }
+        } catch (_) {
+          if (mounted && gen == _sessionGeneration) {
+            setState(() {
+              _rawPlaylists = _rawPlaylists
+                  .map(
+                    (item) => item.id == pl.id
+                        ? item.copyWith(hasPendingLocalEdit: true)
+                        : item,
+                  )
+                  .toList(growable: false);
+            });
+            unawaited(_saveCachedPlaylists());
+          }
+        } finally {
+          _endPlaylistSync(pl.id);
+        }
+      }());
+    }
+  }
+
   Widget _buildPlaylistEditDock() {
+    final hasSelection =
+        _selectedEditingTracks.isNotEmpty && !_isSavingPlaylistEdit;
     return _FloatingDockCapsule(
       key: const Key('playlist-edit-dock'),
       height: _dockHeight,
-      child: Center(
-        child: TextButton.icon(
-          onPressed: _selectedEditingTracks.isEmpty || _isSavingPlaylistEdit
-              ? null
-              : () {
-                  setState(() {
-                    _editingTracks.removeWhere(_selectedEditingTracks.contains);
-                    _selectedEditingTracks.clear();
-                  });
-                },
-          icon: const Icon(Icons.delete_outline_rounded),
-          label: const Text('삭제'),
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          TextButton.icon(
+            key: const Key('playlist-edit-add-to-playlist'),
+            onPressed: hasSelection
+                ? () {
+                    final selected = _editingTracks
+                        .where(_selectedEditingTracks.contains)
+                        .toList(growable: false);
+                    unawaited(_openAddTracksToPlaylistDialog(selected));
+                  }
+                : null,
+            icon: const Icon(Icons.playlist_add_rounded),
+            label: const Text('재생목록에 추가'),
+          ),
+          TextButton.icon(
+            key: const Key('playlist-edit-delete'),
+            onPressed: hasSelection
+                ? () {
+                    setState(() {
+                      _editingTracks.removeWhere(
+                        _selectedEditingTracks.contains,
+                      );
+                      _selectedEditingTracks.clear();
+                    });
+                  }
+                : null,
+            icon: const Icon(Icons.delete_outline_rounded),
+            label: const Text('삭제'),
+          ),
+        ],
       ),
     );
   }
@@ -6951,12 +7282,17 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
                         container: true,
                         label: '전체 선택',
                         checked: _allEditingTracksSelected,
-                        child: IconButton(
+                        child: _DockCircleButton(
                           key: const Key('detail-edit-select-all'),
-                          icon: _playlistSelectionIcon(
-                            context,
-                            _allEditingTracksSelected,
-                          ),
+                          tooltip: '전체 선택',
+                          icon: _allEditingTracksSelected
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked_rounded,
+                          iconColor: _allEditingTracksSelected
+                              ? replicaAccentColor
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                          size: 42,
+                          iconSize: 22,
                           onPressed:
                               _editingTracks.isEmpty || _isSavingPlaylistEdit
                               ? null

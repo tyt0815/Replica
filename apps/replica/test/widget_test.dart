@@ -289,9 +289,9 @@ void main() {
     expect(extractHistoryDeviceName('History.rm'), isNull);
   });
 
-  test('Backend bridge returns 0.5.1 and enforces .rm rules', () {
+  test('Backend bridge returns 0.5.2 and enforces .rm rules', () {
     final core = NativeReplicaMusicCore.openOrFallback();
-    expect(core.coreVersion, '0.5.1');
+    expect(core.coreVersion, '0.5.2');
     expect(core.isReplicaPlaylist('Chill.rm'), isTrue);
     expect(core.isReplicaPlaylist('Chill'), isFalse);
     expect(core.toRemotePlaylistTitle('Chill'), 'Chill.rm');
@@ -1174,16 +1174,27 @@ void main() {
       expect(find.byIcon(Icons.drag_handle_rounded), findsNothing);
 
       final selectAll = find.byKey(const Key('detail-edit-select-all'));
-      expect(tester.widget<IconButton>(selectAll).icon, isA<Icon>());
+      expect(tester.getSize(selectAll), const Size(42, 42));
       expect(
-        (tester.widget<IconButton>(selectAll).icon as Icon).icon,
-        Icons.radio_button_unchecked_rounded,
+        find.descendant(
+          of: selectAll,
+          matching: find.byIcon(Icons.radio_button_unchecked_rounded),
+        ),
+        findsOneWidget,
       );
+      expect(
+        find.byKey(const Key('playlist-edit-add-to-playlist')),
+        findsOneWidget,
+      );
+      expect(find.text('재생목록에 추가'), findsOneWidget);
       await tester.tap(selectAll);
       await tester.pumpAndSettle();
       expect(
-        (tester.widget<IconButton>(selectAll).icon as Icon).icon,
-        Icons.check_circle_rounded,
+        find.descendant(
+          of: selectAll,
+          matching: find.byIcon(Icons.check_circle_rounded),
+        ),
+        findsOneWidget,
       );
       await tester.tap(selectAll);
       await tester.pumpAndSettle();
