@@ -65,7 +65,7 @@ class _ReplicaMusicAppState extends State<ReplicaMusicApp>
   int _maxStorageGb = 0;
   int _tabIndex = 1;
   bool _isNowPlayingOpen = false;
-  bool _nowPlayingOnRight = true;
+  bool _nowPlayingOnRight = false;
   AppEnvironmentInfo _env = const AppEnvironmentInfo(
     version: '0.16.1',
     cacheDir: '',

@@ -10,6 +10,9 @@ import 'package:replica/playback/replica_audio_handler.dart';
 import 'package:replica/ui/replica_music_app.dart';
 
 class _FakeMediaAdapters extends PlatformAdapters {
+  _FakeMediaAdapters({this.dataDir = ''});
+
+  final String dataDir;
   final List<String> sharedSubjects = [];
   final List<String> sharedPaths = [];
 
@@ -21,6 +24,7 @@ class _FakeMediaAdapters extends PlatformAdapters {
       version: fallbackVersion,
       cacheDir: Directory.systemTemp.path,
       storageDir: 'C:\\temp\\storage',
+      dataDir: dataDir,
     );
   }
 
@@ -289,9 +293,9 @@ void main() {
     expect(extractHistoryDeviceName('History.rm'), isNull);
   });
 
-  test('Backend bridge returns 0.5.3 and enforces .rm rules', () {
+  test('Backend bridge returns 0.5.4 and enforces .rm rules', () {
     final core = NativeReplicaMusicCore.openOrFallback();
-    expect(core.coreVersion, '0.5.3');
+    expect(core.coreVersion, '0.5.4');
     expect(core.isReplicaPlaylist('Chill.rm'), isTrue);
     expect(core.isReplicaPlaylist('Chill'), isFalse);
     expect(core.toRemotePlaylistTitle('Chill'), 'Chill.rm');
@@ -319,7 +323,7 @@ void main() {
       final updateRect = tester.getRect(
         find.byKey(const Key('update-available-dialog')),
       );
-      expect(updateRect.center.dx, lessThan(400));
+      expect(updateRect.center.dx, 600);
     },
   );
 
@@ -548,7 +552,9 @@ void main() {
   testWidgets(
     'Fold 8 four screen states render single-column layout and side-by-side landscape docks',
     (tester) async {
-      final adapters = _FakeMediaAdapters();
+      final dataDir = Directory.systemTemp.createTempSync('replica-fold-test-');
+      addTearDown(() => dataDir.deleteSync(recursive: true));
+      final adapters = _FakeMediaAdapters(dataDir: dataDir.path);
       const foldStates = <(String, Size, bool)>[
         ('cover-portrait', Size(360, 840), false),
         ('cover-landscape', Size(840, 360), true),
@@ -576,32 +582,36 @@ void main() {
       );
       expect(find.byKey(const Key('now-playing-empty-pane')), findsOneWidget);
       expect(find.byKey(const Key('mini-player')), findsNothing);
-      final initialRightPane = tester.getRect(
+      final initialLeftPane = tester.getRect(
         find.byKey(const Key('unfolded-now-playing-pane')),
       );
-      expect(initialRightPane.left, greaterThan(400));
+      expect(initialLeftPane.left, 0);
+      expect(
+        tester.getRect(find.byKey(const Key('bottom-nav-bar'))).left,
+        greaterThan(initialLeftPane.right),
+      );
 
       await tester.fling(
         find.byKey(const Key('unfolded-now-playing-pane')),
-        const Offset(-260, 0),
+        const Offset(260, 0),
         900,
       );
       await tester.pumpAndSettle();
-      final swappedLeftPane = tester.getRect(
+      final swappedRightPane = tester.getRect(
         find.byKey(const Key('unfolded-now-playing-pane')),
       );
-      expect(swappedLeftPane.left, lessThan(20));
+      expect(swappedRightPane.right, tester.view.physicalSize.width);
 
       await tester.fling(
         find.byKey(const Key('bottom-nav-bar')),
-        const Offset(-260, 0),
+        const Offset(260, 0),
         900,
       );
       await tester.pumpAndSettle();
-      final swappedBackRightPane = tester.getRect(
+      final swappedBackLeftPane = tester.getRect(
         find.byKey(const Key('unfolded-now-playing-pane')),
       );
-      expect(swappedBackRightPane.left, greaterThan(400));
+      expect(swappedBackLeftPane.left, 0);
 
       tester.view.physicalSize = foldStates.first.$2;
       await tester.pumpAndSettle();
@@ -630,6 +640,7 @@ void main() {
           final paneRect = tester.getRect(
             find.byKey(const Key('unfolded-now-playing-pane')),
           );
+          expect(paneRect.left, 0);
           expect(coverRect.width, closeTo(paneRect.width, 0.5));
           expect(coverRect.height, closeTo(coverRect.width, 0.5));
           expect(coverRect.top, closeTo(paneRect.top, 0.5));
@@ -851,7 +862,7 @@ void main() {
       final dialogRect = tester.getRect(
         find.byKey(const Key('error-log-sheet')),
       );
-      expect(dialogRect.center.dx, lessThan(400));
+      expect(dialogRect.center.dx, 600);
       final newestY = tester.getTopLeft(find.text('Newest Error')).dy;
       final olderY = tester.getTopLeft(find.text('Older Error')).dy;
       expect(newestY, lessThan(olderY));
