@@ -1,5 +1,10 @@
 # 개발 상태
 
+## 0.5.1 배포 결과
+
+- [GitHub 최신 릴리스](https://github.com/tyt0815/Replica/releases/tag/v0.5.1)를 게시했다. 태그 커밋은 `196a888`이다.
+- `Replica-0.5.1-release.apk`(24.5MB)와 `Replica-0.5.1-release.apk.sha256`을 첨부했다. 게시 전후 내려받은 APK의 SHA-256이 `64ee7109f5097f2923885a98db09ad3071c85e8c256a9b09ad911d5643a44402`로 일치했다.
+
 ## Android 0.5.1 수정
 
 - `ymusic-io/ffmpeg-build`(`n9.1-dev-18-g90cca8111b`)의 사전 빌드 Android `libffmpeg.so`(arm64-v8a·x86_64)를 체크섬 검증 후 스테이징하도록 `scripts/check-android.ps1`을 보완했다. `ReplicaBackend`가 `vendor/YMusicV4`의 `Ffmpeg.toOpus` / `Ffmpeg.toM4a`를 호출해 Opus 선택 시 `.opus`(Ogg Opus), M4A 선택 시 커버 아트·메타데이터 포함 `.m4a`로 저장한다.
