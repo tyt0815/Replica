@@ -66,7 +66,7 @@ class NativeReplicaMusicCore implements ReplicaMusicCoreBridge {
   bool get isNativeLoaded => true;
 
   @override
-  String get coreVersion => '0.4.3';
+  String get coreVersion => '0.5.0';
 
   @override
   bool isReplicaPlaylist(String rawTitle) {
@@ -187,7 +187,7 @@ class _FallbackReplicaMusicCore implements ReplicaMusicCoreBridge {
   bool get isNativeLoaded => false;
 
   @override
-  String get coreVersion => '0.4.3';
+  String get coreVersion => '0.5.0';
 
   @override
   bool isReplicaPlaylist(String rawTitle) {

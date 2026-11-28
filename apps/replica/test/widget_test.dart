@@ -289,9 +289,9 @@ void main() {
     expect(extractHistoryDeviceName('History.rm'), isNull);
   });
 
-  test('Backend bridge returns 0.4.3 and enforces .rm rules', () {
+  test('Backend bridge returns 0.5.0 and enforces .rm rules', () {
     final core = NativeReplicaMusicCore.openOrFallback();
-    expect(core.coreVersion, '0.4.3');
+    expect(core.coreVersion, '0.5.0');
     expect(core.isReplicaPlaylist('Chill.rm'), isTrue);
     expect(core.isReplicaPlaylist('Chill'), isFalse);
     expect(core.toRemotePlaylistTitle('Chill'), 'Chill.rm');
@@ -1171,6 +1171,8 @@ void main() {
       expect(find.text('전체 해제'), findsOneWidget);
       await tester.tap(find.text('전체 해제'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(editTrackKey);
+      await tester.pumpAndSettle();
       await tester.tap(editTrackKey);
       await tester.pumpAndSettle();
       await tester.tap(find.text('삭제'));
@@ -1181,6 +1183,72 @@ void main() {
       expect(find.byKey(const Key('track-tile-new-track-1')), findsOneWidget);
 
       expect(core.downloadRequests.last['format'], 'opus');
+    },
+  );
+
+  testWidgets(
+    'Playlist editor keeps the detail header and only downloads with opt-in',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 840);
+      addTearDown(tester.view.reset);
+      final core = _FakePlaylistDownloadCore();
+      await tester.pumpWidget(
+        ReplicaMusicApp(
+          core: core,
+          adapters: _FakeLoggedInAdapters(),
+          audioEngine: _FakeAudioEngine(),
+          fileExistsOverride: (path) => path.contains('new-track-1'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('playlist-tile-PL_AUTO_DOWNLOAD_TEST')),
+      );
+      await tester.pumpAndSettle();
+      expect(core.downloadRequests, isEmpty);
+      expect(find.byKey(const Key('detail-play-button')), findsOneWidget);
+
+      Future<void> openEditor() async {
+        await tester.tap(find.byKey(const Key('detail-more-button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('편집'));
+        await tester.pumpAndSettle();
+      }
+
+      final option = find.byKey(const Key('playlist-auto-download'));
+      await openEditor();
+      expect(find.byKey(const Key('detail-playlist-title')), findsOneWidget);
+      expect(find.byKey(const Key('detail-play-button')), findsNothing);
+      expect(find.byKey(const Key('detail-shuffle-button')), findsNothing);
+      expect(find.byKey(const Key('edit-drag-new-track-1')), findsOneWidget);
+      expect(tester.widget<CheckboxListTile>(option).value, isFalse);
+      await tester.tap(option);
+      await tester.pumpAndSettle();
+      expect(core.downloadRequests, isEmpty);
+      await tester.tap(find.byKey(const Key('detail-back-button')));
+      await tester.pumpAndSettle();
+
+      await openEditor();
+      expect(tester.widget<CheckboxListTile>(option).value, isFalse);
+      await tester.tap(option);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('detail-edit-confirm')));
+      await tester.pumpAndSettle();
+      expect(core.downloadRequests, hasLength(1));
+      expect(find.byKey(const Key('detail-play-button')), findsOneWidget);
+
+      core.includeNewRemoteTrack = true;
+      final refresh = tester.state<RefreshIndicatorState>(
+        find.byType(RefreshIndicator).hitTestable().first,
+      );
+      unawaited(refresh.show());
+      await tester.pumpAndSettle();
+      expect(core.downloadRequests, hasLength(2));
+      expect(
+        (core.downloadRequests.last['track'] as Map)['video_id'],
+        'new-track-2',
+      );
     },
   );
 
@@ -1450,5 +1518,37 @@ class _FakeHistoryCore extends _FakeMediaCore {
       default:
         return super.invoke(request);
     }
+  }
+}
+
+class _FakePlaylistDownloadCore extends _FakeDownloadFlowCore {
+  bool includeNewRemoteTrack = false;
+  final List<dynamic> saved = [];
+  @override
+  Future<Map<String, dynamic>> invoke(Map<String, dynamic> request) async {
+    if (request['op'] == 'list_playlists') {
+      return {
+        'playlists': [
+          {'id': 'PL_AUTO_DOWNLOAD_TEST', 'remote_title': 'Offline Mix.rm'},
+        ],
+      };
+    }
+    if (request['op'] == 'list_downloaded') return {'tracks': saved.toList()};
+    if (request['op'] == 'download_track') {
+      final data = await super.invoke(request);
+      saved.add(data['downloaded']);
+      return data;
+    }
+    if (request['op'] == 'playlist_tracks') {
+      final data = await super.invoke({'op': 'search'});
+      return {
+        'tracks': [
+          ...data['tracks'] as List<dynamic>,
+          if (includeNewRemoteTrack)
+            {'video_id': 'new-track-2', 'title': 'New remote song'},
+        ],
+      };
+    }
+    return super.invoke(request);
   }
 }
